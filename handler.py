@@ -825,7 +825,12 @@ def handler(job):
     
     if not os.path.exists(EDITMAP_JSON):
         print(f"❌ ERROR: '{EDITMAP_JSON}' not found")
-        return
+        print(f"❌ ERROR: '{INPUT_VIDEO}' not found")
+        print(f"Downloading test edit from Google Drive...")
+        direct_link = "https://drive.google.com/file/d/1kXnvg8gwgG-qhAD6FWf5K1KX1hh44fiT/view?usp=sharing"  # ← paste yours
+        subprocess.check_call(["wget", "--no-check-certificate", "-O", INPUT_VIDEO, direct_link])
+        print("Download complete!")
+        # return
     
     info = get_video_info(INPUT_VIDEO)
     total_duration = info["duration"]
