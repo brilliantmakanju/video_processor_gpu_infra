@@ -276,7 +276,13 @@ def get_video_info(path: str) -> Dict[str, Any]:
 def run_ffmpeg(args: List[str], timeout: int = 300, show_progress: bool = False) -> None:
     """Run FFmpeg with timeout and optional progress."""
     env = os.environ.copy()
-    env["FFREPORT"] = "level=error"
+    # env["FFREPORT"] = "level=error"  # This causes "Invalid report file level" error
+    
+    # Add -loglevel error to args if not present
+    if "-loglevel" not in args:
+        # Insert after 'ffmpeg'
+        args.insert(1, "-loglevel")
+        args.insert(2, "error")
     
     try:
         if show_progress:
@@ -309,9 +315,11 @@ def run_ffmpeg(args: List[str], timeout: int = 300, show_progress: bool = False)
                 preexec_fn=os.setsid if os.name != 'nt' else None
             )
             
-            _, stderr = process.communicate(timeout=timeout)
+            stdout, stderr = process.communicate(timeout=timeout)
             if process.returncode != 0:
-                raise RuntimeError(f"FFmpeg failed: {stderr[-1000:]}")
+                # If it failed, provide more context from stderr
+                error_msg = stderr[-1000:] if stderr else "Unknown error (no stderr)"
+                raise RuntimeError(f"FFmpeg failed: {error_msg}")
                 
     except subprocess.TimeoutExpired:
         if os.name != 'nt':
