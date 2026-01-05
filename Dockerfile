@@ -15,28 +15,14 @@ RUN apt-get update && \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Verify FFmpeg has NVIDIA hardware acceleration support
-RUN ffmpeg -encoders 2>&1 | grep -i nvenc || echo "Warning: NVENC not detected"
 
 # Install Python dependencies
 RUN pip install --no-cache-dir \
     runpod \
     gdown
+   
+# Copy your handler
+COPY handler.py /
 
-# Set working directory
-WORKDIR /workspace
-
-# Copy handler script
-COPY handler.py /workspace/handler.py
-
-# Make handler executable
-RUN chmod +x /workspace/handler.py
-
-# Health check to verify GPU availability
-RUN nvidia-smi || echo "Warning: nvidia-smi not available"
-
-# Expose port for RunPod (optional)
-EXPOSE 8000
-
-# Start the serverless worker
-CMD ["python", "-u", "/workspace/handler.py"]
+# Start the worker
+CMD ["python", "-u", "/handler.py"]
