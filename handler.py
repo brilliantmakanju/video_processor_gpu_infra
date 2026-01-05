@@ -21,7 +21,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, TimeoutE
 # PERFORMANCE PRESETS
 # =============================================================================
 
-PERFORMANCE_PRESET = "fast"  # Options: "fast", "balanced", "quality"
+PERFORMANCE_PRESET = "quality"  # Options: "fast", "balanced", "quality"
 ENABLE_GPU = True           # Use NVIDIA GPU acceleration (NVENC)
 GPU_ENCODER = "h264_nvenc"  # Options: "h264_nvenc", "hevc_nvenc", "av1_nvenc"
 
@@ -218,6 +218,47 @@ def download_from_gdrive(file_id: str, output_path: str):
         subprocess.check_call([
             "curl", "-L", "-o", output_path, direct_url
         ])
+
+def upload_to_gofile(file_path: str, api_token: Optional[str] = None) -> Dict[str, Any]:
+    """Upload file to Gofile using curl and return the download URL."""
+    if not os.path.exists(file_path):
+        return {"error": f"File not found: {file_path}"}
+    
+    print(f"📤 Uploading {os.path.basename(file_path)} to Gofile...")
+    
+    try:
+        # Get regional server first (optional, but upload.gofile.io works fine)
+        # We'll use the global endpoint as per documentation
+        url = "https://upload.gofile.io/uploadfile"
+        
+        cmd = ["curl", "-F", f"file=@{file_path}"]
+        if api_token:
+            cmd.extend(["-H", f"Authorization: Bearer {api_token}"])
+        
+        cmd.append(url)
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        
+        if result.returncode != 0:
+            return {"error": f"Curl failed: {result.stderr}"}
+        
+        response = json.loads(result.stdout)
+        if response.get("status") == "ok":
+            data = response.get("data", {})
+            print(f"✅ Upload successful: {data.get('downloadPage')}")
+            return {
+                "success": True,
+                "download_url": data.get("downloadPage"),
+                "file_id": data.get("fileId"),
+                "folder_id": data.get("folderId"),
+                "md5": data.get("md5")
+            }
+        else:
+            return {"error": f"Gofile error: {response.get('status')}"}
+            
+    except Exception as e:
+        print(f"❌ Upload failed: {str(e)}")
+        return {"error": str(e)}
 
 def get_segment_hash(seg: Segment, input_path: str) -> str:
     """Generate unique hash for segment caching."""
@@ -1004,9 +1045,15 @@ def handler(job):
         print(f"Speed: {total_duration_seg/elapsed:.2f}x realtime")
         print(f"{'='*70}\n")
         
+        # Upload to Gofile
+        gofile_token = os.environ.get("GOFILE_TOKEN") or job.get("input", {}).get("gofile_token")
+        upload_result = upload_to_gofile(OUTPUT_VIDEO, gofile_token)
+        
         return {
             "success": True,
             "output_file": OUTPUT_VIDEO,
+            "download_url": upload_result.get("download_url") if upload_result.get("success") else None,
+            "gofile_info": upload_result if upload_result.get("success") else None,
             "processing_time": elapsed,
             "output_size_mb": file_size,
             "compression_percent": compression,

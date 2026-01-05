@@ -5,6 +5,7 @@ FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 ENV CUDA_VISIBLE_DEVICES=0
+ENV GOFILE_TOKEN=""
 
 # Install system dependencies
 RUN apt-get update && \
