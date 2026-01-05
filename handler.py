@@ -4,11 +4,11 @@ Spliceo V2 Ultra - Hyper-Optimized Minecraft Video Editor
 OPTIMIZATIONS:
 - Smart codec copy for unmodified segments (10x faster)
 - Aggressive file size reduction (50-70% smaller)
-- CPU-optimized for old hardware
+- NVIDIA GPU acceleration (RTX 5090 optimized)
 - Parallel chunk processing with smart batching
 - Minimal re-encoding strategy
 - Two-pass encoding option for best compression
-Date: December 29, 2025
+Date: January 5, 2026
 """
 
 from dataclasses import dataclass, field
@@ -23,7 +23,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, TimeoutE
 
 PERFORMANCE_PRESET = "fast"  # Options: "fast", "balanced", "quality"
 ENABLE_GPU = True           # Use NVIDIA GPU acceleration (NVENC)
-GPU_ENCODER = "h264_nvenc"  # Options: "h264_nvenc", "hevc_nvenc"
+GPU_ENCODER = "h264_nvenc"  # Options: "h264_nvenc", "hevc_nvenc", "av1_nvenc"
 
 PRESETS = {
     "fast": {
@@ -31,10 +31,10 @@ PRESETS = {
         "crf": 26,
         "cq": 28,             # For NVENC
         "gpu_preset": "p1",   # fastest (NVENC)
-        "workers": 3,
+        "workers": 4,         # RTX 5090 can handle more parallel tasks
         "audio_bitrate": "96k",
         "color_grading": False,
-        "two_pass": True,
+        "two_pass": False,
         "tune": "fastdecode"
     },
     "balanced": {
@@ -42,7 +42,7 @@ PRESETS = {
         "crf": 23,
         "cq": 24,             # For NVENC
         "gpu_preset": "p4",   # balanced (NVENC)
-        "workers": 2,
+        "workers": 3,
         "audio_bitrate": "128k",
         "color_grading": True,
         "two_pass": False,
@@ -161,8 +161,19 @@ def check_gpu_support() -> bool:
         cmd_check = [FFMPEG_BIN, "-encoders"]
         result = subprocess.run(cmd_check, capture_output=True, text=True, timeout=5)
         if GPU_ENCODER not in result.stdout:
+            print(f"⚠️  GPU encoder {GPU_ENCODER} not found in FFmpeg")
             _GPU_SUPPORT_CACHE = False
             return False
+            
+        # Check CUDA/GPU availability
+        cmd_gpu = ["nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader"]
+        try:
+            gpu_result = subprocess.run(cmd_gpu, capture_output=True, text=True, timeout=5)
+            if gpu_result.returncode == 0:
+                gpu_info = gpu_result.stdout.strip()
+                print(f"✓ GPU detected: {gpu_info}")
+        except:
+            pass
             
         # Then try a tiny dummy encode to verify hardware/drivers
         # This is the most reliable way to check for CUDA/NVENC usability
@@ -172,10 +183,41 @@ def check_gpu_support() -> bool:
         ]
         process = subprocess.run(dummy_cmd, capture_output=True, text=True, timeout=10)
         _GPU_SUPPORT_CACHE = (process.returncode == 0)
+        
+        if _GPU_SUPPORT_CACHE:
+            print(f"✓ GPU encoding test passed - {GPU_ENCODER} ready")
+        else:
+            print(f"⚠️  GPU encoding test failed - falling back to CPU")
+            
         return _GPU_SUPPORT_CACHE
-    except:
+    except Exception as e:
+        print(f"⚠️  GPU check error: {str(e)}")
         _GPU_SUPPORT_CACHE = False
         return False
+
+def download_from_gdrive(file_id: str, output_path: str):
+    """Download file from Google Drive using gdown or direct download."""
+    try:
+        # Try using gdown (more reliable for large files)
+        import gdown
+        url = f"https://drive.google.com/uc?id={file_id}"
+        gdown.download(url, output_path, quiet=False)
+    except ImportError:
+        # Fallback to wget with direct download link
+        direct_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        subprocess.check_call([
+            "wget", "--no-check-certificate", 
+            "--content-disposition",
+            "-O", output_path, 
+            direct_url
+        ])
+    except Exception as e:
+        print(f"⚠️  Download error, trying alternative method: {str(e)}")
+        # Last resort: try curl
+        direct_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        subprocess.check_call([
+            "curl", "-L", "-o", output_path, direct_url
+        ])
 
 def get_segment_hash(seg: Segment, input_path: str) -> str:
     """Generate unique hash for segment caching."""
@@ -489,12 +531,13 @@ def build_zoom_filter(edit: Edit, width: int, height: int) -> Optional[str]:
         f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
         f"scale={width}:{height}:flags=lanczos"
     )
+
 # =============================================================================
-# SMART RENDERING PIPELINE
+# SMART RENDERING PIPELINE (GPU-OPTIMIZED)
 # =============================================================================
 
 def render_segment_smart(args: Tuple) -> str:
-    """Ultra-optimized segment rendering with smart codec copy."""
+    """Ultra-optimized segment rendering with smart codec copy and GPU acceleration."""
     (i, seg, input_path, temp_dir, fps, debug_overlay, has_audio,
      orig_w, orig_h, out_w, out_h) = args
     
@@ -542,7 +585,7 @@ def render_segment_smart(args: Tuple) -> str:
         
         # Only scale if needed
         if out_w != orig_w or out_h != orig_h:
-            # Use faster scaling algorithm
+            # Use hardware scaling when possible
             v_filters.append(f"scale={out_w}:{out_h}:flags=fast_bilinear")
         
         color_filter = build_optimized_color_filter()
@@ -556,21 +599,53 @@ def render_segment_smart(args: Tuple) -> str:
             "-i", input_path
         ]
         
+        # Add filters if any
+        if v_filters:
+            cmd.extend(["-vf", ",".join(v_filters)])
+        
         # GPU or CPU encoding
         use_gpu = check_gpu_support()
         
-        def build_enc_cmd(gpu: bool):
-            c = cmd.copy()
-            if gpu:
-                c.extend([
-                    "-c:v", GPU_ENCODER,
-                    "-preset", GPU_PRESET,
-                    "-rc", "vbr",
-                    "-cq", str(CQ_QUALITY),
-                    "-pix_fmt", "yuv420p"
-                ])
-            else:
-                c.extend([
+        if use_gpu:
+            cmd.extend([
+                "-c:v", GPU_ENCODER,
+                "-preset", GPU_PRESET,
+                "-rc", "vbr",
+                "-cq", str(CQ_QUALITY),
+                "-b:v", "0",  # Let CQ control quality
+                "-pix_fmt", "yuv420p",
+                "-gpu", "0"  # Use first GPU
+            ])
+        else:
+            cmd.extend([
+                "-c:v", "libx264",
+                "-preset", ENCODING_PRESET,
+                "-crf", str(CRF_QUALITY),
+                "-tune", TUNE_PARAM,
+                "-pix_fmt", "yuv420p",
+                "-threads", str(FFMPEG_THREADS)
+            ])
+        
+        if has_audio:
+            cmd.extend(["-c:a", "aac", "-b:a", AUDIO_BITRATE])
+        
+        cmd.extend(["-movflags", "+faststart", temp_out])
+        
+        try:
+            run_ffmpeg(cmd, timeout=timeout)
+        except Exception as e:
+            if use_gpu:
+                print(f"  [{i:3d}] GPU FAILED, retrying with CPU: {str(e)[:50]}...", flush=True)
+                # Rebuild command with CPU encoding
+                cmd_cpu = [
+                    FFMPEG_BIN, "-y",
+                    "-ss", str(seg.start),
+                    "-t", str(seg.duration),
+                    "-i", input_path
+                ]
+                if v_filters:
+                    cmd_cpu.extend(["-vf", ",".join(v_filters)])
+                cmd_cpu.extend([
                     "-c:v", "libx264",
                     "-preset", ENCODING_PRESET,
                     "-crf", str(CRF_QUALITY),
@@ -578,19 +653,10 @@ def render_segment_smart(args: Tuple) -> str:
                     "-pix_fmt", "yuv420p",
                     "-threads", str(FFMPEG_THREADS)
                 ])
-            
-            if has_audio:
-                c.extend(["-c:a", "aac", "-b:a", AUDIO_BITRATE])
-            
-            c.extend(["-movflags", "+faststart", temp_out])
-            return c
-
-        try:
-            run_ffmpeg(build_enc_cmd(use_gpu), timeout=timeout)
-        except Exception as e:
-            if use_gpu:
-                print(f"  [{i:3d}] GPU FAILED, falling back to CPU: {str(e)[:50]}...", flush=True)
-                run_ffmpeg(build_enc_cmd(False), timeout=timeout)
+                if has_audio:
+                    cmd_cpu.extend(["-c:a", "aac", "-b:a", AUDIO_BITRATE])
+                cmd_cpu.extend(["-movflags", "+faststart", temp_out])
+                run_ffmpeg(cmd_cpu, timeout=timeout)
             else:
                 print(f"  [{i:3d}] FAILED: {str(e)}", flush=True)
                 raise
@@ -675,34 +741,58 @@ def render_segment_smart(args: Tuple) -> str:
     # GPU or CPU encoding
     use_gpu = check_gpu_support()
     
-    def build_full_enc_cmd(gpu: bool):
-        c = cmd.copy()
-        if gpu:
-            c.extend([
-                "-c:v", GPU_ENCODER,
-                "-preset", GPU_PRESET,
-                "-rc", "vbr",
-                "-cq", str(CQ_QUALITY),
-                "-pix_fmt", "yuv420p"
-            ])
-        else:
-            c.extend([
+    if use_gpu:
+        cmd.extend([
+            "-c:v", GPU_ENCODER,
+            "-preset", GPU_PRESET,
+            "-rc", "vbr",
+            "-cq", str(CQ_QUALITY),
+            "-b:v", "0",
+            "-pix_fmt", "yuv420p",
+            "-gpu", "0"
+        ])
+    else:
+        cmd.extend([
+            "-c:v", "libx264",
+            "-preset", ENCODING_PRESET,
+            "-crf", str(CRF_QUALITY),
+            "-tune", TUNE_PARAM,
+            "-pix_fmt", "yuv420p",
+            "-threads", str(FFMPEG_THREADS)
+        ])
+    
+    cmd.extend(["-movflags", "+faststart", temp_out])
+
+    try:
+        run_ffmpeg(cmd, timeout=timeout)
+    except Exception as e:
+        if use_gpu:
+            print(f"  [{i:3d}] GPU FAILED, retrying with CPU: {str(e)[:50]}...", flush=True)
+            # Rebuild command with CPU
+            cmd_cpu = [
+                FFMPEG_BIN, "-y",
+                "-ss", str(seg.start),
+                "-t", str(seg.duration),
+                "-i", input_path
+            ]
+            if af_chain:
+                cmd_cpu.extend(["-filter_complex", filter_complex, "-map", "[v]", "-map", "[a]"])
+            else:
+                cmd_cpu.extend(["-vf", vf_chain])
+                if has_audio:
+                    cmd_cpu.extend(["-c:a", "aac", "-b:a", AUDIO_BITRATE])
+            
+            cmd_cpu.extend([
                 "-c:v", "libx264",
                 "-preset", ENCODING_PRESET,
                 "-crf", str(CRF_QUALITY),
                 "-tune", TUNE_PARAM,
                 "-pix_fmt", "yuv420p",
-                "-threads", str(FFMPEG_THREADS)
+                "-threads", str(FFMPEG_THREADS),
+                "-movflags", "+faststart",
+                temp_out
             ])
-        c.extend(["-movflags", "+faststart", temp_out])
-        return c
-
-    try:
-        run_ffmpeg(build_full_enc_cmd(use_gpu), timeout=timeout)
-    except Exception as e:
-        if use_gpu:
-            print(f"  [{i:3d}] GPU FAILED, falling back to CPU: {str(e)[:50]}...", flush=True)
-            run_ffmpeg(build_full_enc_cmd(False), timeout=timeout)
+            run_ffmpeg(cmd_cpu, timeout=timeout)
         else:
             print(f"  [{i:3d}] FAILED: {str(e)}", flush=True)
             raise
@@ -808,39 +898,71 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
                 pass
 
 # =============================================================================
-# MAIN
+# MAIN HANDLER
 # =============================================================================
+
 def handler(job):
+    """Main RunPod handler function."""
     print("\n" + "="*70)
-    print("Spliceo V2 Ultra - Hyper-Optimized Video Editor")
+    print("Spliceo V2 Ultra - GPU-Optimized Video Editor")
     print("="*70 + "\n")
     
+    # Install gdown if not available
+    try:
+        import gdown
+    except ImportError:
+        print("📦 Installing gdown for Google Drive downloads...")
+        subprocess.check_call(["pip", "install", "-q", "gdown"])
+        import gdown
+        print("✓ gdown installed\n")
+    
+    # Download input video if not present
     if not os.path.exists(INPUT_VIDEO):
-        print(f"❌ ERROR: '{INPUT_VIDEO}' not found")
-        print(f"Downloading test video from Google Drive...")
-        direct_link = "https://drive.google.com/file/d/179n-sYHEwd69Seb2WcqCZS4b5BxV5BNj/view?usp=drive_link"  # ← paste yours
-        subprocess.check_call(["wget", "--no-check-certificate", "-O", INPUT_VIDEO, direct_link])
-        print("Download complete!")
-        
+        print(f"📥 Downloading test video from Google Drive...")
+        video_file_id = "179n-sYHEwd69Seb2WcqCZS4b5BxV5BNj"
+        try:
+            download_from_gdrive(video_file_id, INPUT_VIDEO)
+            print(f"✓ Video downloaded: {INPUT_VIDEO}\n")
+        except Exception as e:
+            print(f"❌ Failed to download video: {str(e)}")
+            return {"error": f"Failed to download video: {str(e)}"}
     
+    # Download edit map if not present
     if not os.path.exists(EDITMAP_JSON):
-        print(f"❌ ERROR: '{EDITMAP_JSON}' not found")
-        print(f"Downloading test edit from Google Drive...")
-        direct_links = "https://drive.google.com/file/d/1kXnvg8gwgG-qhAD6FWf5K1KX1hh44fiT/view?usp=sharing"  # ← paste yours
-        subprocess.check_call(["wget", "--no-check-certificate", "-O", EDITMAP_JSON, direct_links])
-        print("Download complete!")
-        # return
+        print(f"📥 Downloading test edit map from Google Drive...")
+        edit_file_id = "1kXnvg8gwgG-qhAD6FWf5K1KX1hh44fiT"
+        try:
+            download_from_gdrive(edit_file_id, EDITMAP_JSON)
+            print(f"✓ Edit map downloaded: {EDITMAP_JSON}\n")
+        except Exception as e:
+            print(f"❌ Failed to download edit map: {str(e)}")
+            return {"error": f"Failed to download edit map: {str(e)}"}
     
-    info = get_video_info(INPUT_VIDEO)
-    total_duration = info["duration"]
+    # Validate video file
+    try:
+        info = get_video_info(INPUT_VIDEO)
+        total_duration = info["duration"]
+        print(f"✓ Video validated: {info['width']}x{info['height']}, {total_duration:.1f}s\n")
+    except Exception as e:
+        print(f"❌ Invalid video file: {str(e)}")
+        return {"error": f"Invalid video file: {str(e)}"}
     
-    print(f"Loading edits...")
-    with open(EDITMAP_JSON, "r") as f:
-        data = json.load(f)
+    # Load and parse edit map
+    try:
+        print(f"📋 Loading edit map...")
+        with open(EDITMAP_JSON, "r") as f:
+            data = json.load(f)
+        
+        edits, subtitles = parse_edit_map(data)
+        print(f"✓ Found {len(edits)} edits, {len(subtitles)} subtitles\n")
+    except json.JSONDecodeError as e:
+        print(f"❌ Invalid JSON in edit map: {str(e)}")
+        return {"error": f"Invalid JSON in edit map: {str(e)}"}
+    except Exception as e:
+        print(f"❌ Failed to parse edit map: {str(e)}")
+        return {"error": f"Failed to parse edit map: {str(e)}"}
     
-    edits, subtitles = parse_edit_map(data)
-    print(f"Found {len(edits)} edits, {len(subtitles)} subtitles\n")
-    
+    # Create segments
     orig_w, orig_h = info["width"], info["height"]
     out_w, out_h = get_output_resolution(orig_w, orig_h)
     
@@ -848,8 +970,9 @@ def handler(job):
                                orig_w, orig_h, out_w, out_h)
     
     total_duration_seg = sum(s.duration for s in segments)
-    print(f"Timeline: {len(segments)} segments | {total_duration_seg:.1f}s total\n")
+    print(f"📊 Timeline: {len(segments)} segments | {total_duration_seg:.1f}s total\n")
     
+    # Start rendering
     start_time = time.time()
     
     try:
@@ -858,12 +981,13 @@ def handler(job):
         end_time = time.time()
         elapsed = end_time - start_time
         
+        # Calculate statistics
         file_size = os.path.getsize(OUTPUT_VIDEO) / (1024 * 1024)
         original_size = os.path.getsize(INPUT_VIDEO) / (1024 * 1024)
         compression = ((original_size - file_size) / original_size) * 100
         
         print(f"\n{'='*70}")
-        print("✓ SUCCESS!")
+        print("✅ SUCCESS!")
         print(f"{'='*70}")
         print(f"Output: {OUTPUT_VIDEO}")
         print(f"Time: {elapsed/60:.2f} min ({elapsed:.1f}s)")
@@ -872,12 +996,26 @@ def handler(job):
         print(f"Speed: {total_duration_seg/elapsed:.2f}x realtime")
         print(f"{'='*70}\n")
         
+        return {
+            "success": True,
+            "output_file": OUTPUT_VIDEO,
+            "processing_time": elapsed,
+            "output_size_mb": file_size,
+            "compression_percent": compression,
+            "realtime_speed": total_duration_seg/elapsed,
+            "segments_processed": len(segments)
+        }
+        
     except KeyboardInterrupt:
-        print("\n⚠ Interrupted!")
-        raise
+        print("\n⚠️ Interrupted by user!")
+        return {"error": "Processing interrupted"}
     except Exception as e:
-        print(f"\n✗ ERROR: {str(e)}")
-        raise
+        print(f"\n❌ ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
 
 
-runpod.serverless.start({"handler": handler})
+# Start RunPod serverless handler
+if __name__ == "__main__":
+    runpod.serverless.start({"handler": handler})
