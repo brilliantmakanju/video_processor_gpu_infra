@@ -818,7 +818,11 @@ def handler(job):
     
     if not os.path.exists(INPUT_VIDEO):
         print(f"❌ ERROR: '{INPUT_VIDEO}' not found")
-        return
+        print(f"Downloading test video from Google Drive...")
+        direct_link = "https://drive.google.com/file/d/179n-sYHEwd69Seb2WcqCZS4b5BxV5BNj/view?usp=drive_link"  # ← paste yours
+        subprocess.check_call(["wget", "--no-check-certificate", "-O", INPUT_VIDEO, direct_link])
+        print("Download complete!")
+        
     
     if not os.path.exists(EDITMAP_JSON):
         print(f"❌ ERROR: '{EDITMAP_JSON}' not found")
