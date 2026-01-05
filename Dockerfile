@@ -1,7 +1,10 @@
-# Good base with CUDA 12.x and drivers
-FROM runpod/pytorch:2.4.0-py3.10-cuda12.4.1
+# Official lightweight RunPod base with CUDA + Python
+FROM runpod/base:latest
 
-# Install FFmpeg (with NVIDIA hardware accel support)
+# Set working directory
+WORKDIR /workspace
+
+# Install FFmpeg with NVIDIA support
 RUN apt-get update && \
     apt-get install -y ffmpeg && \
     rm -rf /var/lib/apt/lists/*
@@ -9,8 +12,8 @@ RUN apt-get update && \
 # Install RunPod SDK
 RUN pip install runpod
 
-# Copy your handler
-COPY handler.py /
+# Copy all your files (handler, test video, edit.json, etc.)
+COPY . /workspace
 
-# Start the worker
-CMD ["python", "-u", "/handler.py"]
+# Start the serverless worker
+CMD ["python", "-u", "/workspace/handler.py"]
