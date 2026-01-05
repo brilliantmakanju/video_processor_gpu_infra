@@ -810,7 +810,6 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
 # =============================================================================
 # MAIN
 # =============================================================================
-
 def handler(job):
     print("\n" + "="*70)
     print("Spliceo V2 Ultra - Hyper-Optimized Video Editor")
