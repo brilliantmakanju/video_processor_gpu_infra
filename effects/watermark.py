@@ -32,7 +32,7 @@ def download_watermark(watermark_url: str) -> Optional[str]:
     
     local_path = f"watermark{ext}"
     try:
-        download_file(watermark_url, local_path)
+        download_file(watermark_url, local_path, 8192, 120)
         return local_path
     except Exception:
         return None

@@ -21,7 +21,7 @@ def handler(job):
         v_url, e_url, u_url, p_url, o_res, is_paid = parse_job_input(job['input'])
 
         log(f"Downloading files (Target: {o_res}, Paid: {is_paid})...")
-        download_file(v_url, INPUT_VIDEO)
+        download_file(v_url, INPUT_VIDEO, 8192, 120)
         edit_data = load_edit_data(e_url)
         
         info = get_video_info(INPUT_VIDEO)

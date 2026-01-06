@@ -20,7 +20,7 @@ def load_edit_data(edit_json_url: Any) -> Dict[str, Any]:
     """Load edit data from URL or direct object."""
     if isinstance(edit_json_url, str) and (edit_json_url.startswith("http") or len(edit_json_url) < 50):
         from storage.downloader import download_file
-        download_file(edit_json_url, EDITMAP_JSON)
+        download_file(edit_json_url, EDITMAP_JSON, 8192, 120)
         with open(EDITMAP_JSON, "r") as f:
             return json.load(f)
     return edit_json_url if isinstance(edit_json_url, dict) else json.loads(edit_json_url)
