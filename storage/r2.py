@@ -10,5 +10,7 @@ def upload_to_r2(file_path: str, presigned_url: str):
     
     with open(file_path, 'rb') as f:
         # Use a reasonable timeout for upload
-        response = requests.put(presigned_url, data=f, timeout=(10, 600))
+        # IMPORTANT: Content-Type must match what was used to generate the presigned URL
+        headers = {"Content-Type": "video/mp4"}
+        response = requests.put(presigned_url, data=f, headers=headers, timeout=(10, 600))
         response.raise_for_status()
