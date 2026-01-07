@@ -25,7 +25,7 @@ RUN apt-get update && \
     libvpx-dev \
     libfdk-aac-dev \
     libssl-dev \
-    libnuma-dev \
+    libnuma-dev && \              
     apt-get remove -y ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
