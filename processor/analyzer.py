@@ -3,30 +3,39 @@ from models import Edit, Subtitle, Segment
 from config import DEBUG_OVERLAY, ENABLE_COLOR_GRADING
 
 def parse_edit_map(data: Dict[str, Any]) -> Tuple[List[Edit], List[Subtitle]]:
-    """Parse JSON into Edit and Subtitle objects."""
+    """Parse JSON into Edit and Subtitle objects with robust error handling."""
     edits = []
     subtitles = []
     
+    if not isinstance(data, dict):
+        return edits, subtitles
+
     for e in data.get("edits", []):
-        edits.append(Edit(
-            end=float(e["end"]),
-            start=float(e["start"]),
-            zoom=e.get("zoom", 1.0),
-            type=e.get("type", "zoom"),
-            speed=float(e.get("speed", 1.0)),
-            is_locked=e.get("isLocked", False),
-            anchor_x=float(e.get("anchorX", 0.5)),
-            anchor_y=float(e.get("anchorY", 0.5))
-        ))
+        try:
+            edits.append(Edit(
+                end=float(e.get("end", 0)),
+                start=float(e.get("start", 0)),
+                zoom=e.get("zoom", 1.0),
+                type=e.get("type", "zoom"),
+                speed=float(e.get("speed", 1.0)),
+                is_locked=e.get("isLocked", False),
+                anchor_x=float(e.get("anchorX", 0.5)),
+                anchor_y=float(e.get("anchorY", 0.5))
+            ))
+        except (ValueError, TypeError, KeyError):
+            continue # Skip malformed edit
     
     for s in data.get("subtitles", []):
-        subtitles.append(Subtitle(
-            text=s["text"],
-            end=float(s["end"]),
-            start=float(s["start"]),
-            style=s.get("style", {}),
-            is_locked=s.get("isLocked", False)
-        ))
+        try:
+            subtitles.append(Subtitle(
+                text=str(s.get("text", "")),
+                end=float(s.get("end", 0)),
+                start=float(s.get("start", 0)),
+                style=s.get("style", {}),
+                is_locked=s.get("isLocked", False)
+            ))
+        except (ValueError, TypeError, KeyError):
+            continue # Skip malformed subtitle
     
     return edits, subtitles
 

@@ -2,9 +2,11 @@ import os
 import json
 import subprocess
 from typing import Optional, Dict, Any
+from utils.retry import retry
 
+@retry(Exception, tries=2, delay=5, backoff=2)
 def upload_to_gofile(file_path: str, api_token: Optional[str] = None) -> Dict[str, Any]:
-    """Upload file to Gofile."""
+    """Upload file to Gofile with retry logic."""
     if not os.path.exists(file_path):
         return {"error": "File not found"}
     
@@ -16,9 +18,13 @@ def upload_to_gofile(file_path: str, api_token: Optional[str] = None) -> Dict[st
         cmd.append(url)
         
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            raise RuntimeError(f"Curl failed: {result.stderr}")
+            
         response = json.loads(result.stdout)
         if response.get("status") == "ok":
             return {"success": True, "download_url": response["data"]["downloadPage"]}
         return {"error": response.get("status")}
     except Exception as e:
-        return {"error": str(e)}
+        # Re-raise to trigger retry
+        raise e

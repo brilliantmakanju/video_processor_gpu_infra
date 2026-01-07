@@ -15,13 +15,26 @@ from utils.video import get_video_info, get_output_resolution
 from processor.job_parser import parse_job_input, load_edit_data
 from effects.watermark import apply_watermark, download_watermark, cleanup_watermark
 
+import signal
+
 def handler(job):
-    """Main RunPod handler - Simplified with Dynamic Resolution."""
+    """Main RunPod handler with Global Timeout and Robust Error Handling."""
+    
+    def timeout_handler(signum, frame):
+        raise TimeoutError("Global job timeout reached (30 minutes)")
+
+    # Set global timeout of 30 minutes (1800 seconds)
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(1800)
+
     try:
+        if not job or 'input' not in job:
+            raise ValueError("Invalid job format: missing 'input' field")
+
         v_url, e_url, u_url, p_url, o_res, is_paid = parse_job_input(job['input'])
 
         log(f"Downloading files (Target: {o_res}, Paid: {is_paid})...")
-        download_file(v_url, INPUT_VIDEO, 8192, 120)
+        download_file(v_url, INPUT_VIDEO, 8192, 300) # Increased timeout for large videos
         edit_data = load_edit_data(e_url)
         
         info = get_video_info(INPUT_VIDEO)
@@ -29,6 +42,9 @@ def handler(job):
         out_w, out_h = get_output_resolution(info["width"], info["height"], o_res)
         segments = create_segments(edits, subtitles, info["duration"], info["width"], info["height"], out_w, out_h)
         
+        if not segments:
+            raise ValueError("No valid segments to process after parsing edit map")
+
         log(f"Processing {len(segments)} segments at {out_w}x{out_h}...")
         start_time = time.time()
 
@@ -42,25 +58,43 @@ def handler(job):
             wm_path = download_watermark(WATERMARK_URL)
             if wm_path and apply_watermark(temp_output, OUTPUT_VIDEO, out_w, out_h, wm_path):
                 log("Watermark applied successfully")
-                os.remove(temp_output)
+                if os.path.exists(temp_output): os.remove(temp_output)
             else:
-                log("Watermark failed, using unwatermarked video")
-                os.rename(temp_output, OUTPUT_VIDEO)
+                log("Watermark failed or skipped, using unwatermarked video")
+                if os.path.exists(temp_output): os.rename(temp_output, OUTPUT_VIDEO)
             cleanup_watermark()
         
         elapsed = time.time() - start_time
 
         res_url = p_url if u_url else None
-        if u_url: upload_to_r2(OUTPUT_VIDEO, u_url)
-        elif not p_url: res_url = upload_to_gofile(OUTPUT_VIDEO, job['input'].get("gofile_token")).get("download_url")
+        if u_url: 
+            upload_to_r2(OUTPUT_VIDEO, u_url)
+        elif not p_url: 
+            gofile_res = upload_to_gofile(OUTPUT_VIDEO, job['input'].get("gofile_token"))
+            if "error" in gofile_res:
+                raise RuntimeError(f"Gofile upload failed: {gofile_res['error']}")
+            res_url = gofile_res.get("download_url")
         
-        return {"success": True, "download_url": res_url, "processing_time": elapsed, "output_size_mb": os.path.getsize(OUTPUT_VIDEO) / (1024 * 1024)}
+        return {
+            "success": True, 
+            "download_url": res_url, 
+            "processing_time": round(elapsed, 2), 
+            "output_size_mb": round(os.path.getsize(OUTPUT_VIDEO) / (1024 * 1024), 2)
+        }
+    except TimeoutError as te:
+        log(f"Timeout Error: {str(te)}")
+        return {"error": "timeout", "message": str(te)}
     except Exception as e:
         log(f"Error: {str(e)}")
-        return {"error": str(e)}
+        return {"error": "failure", "message": str(e)}
     finally:
+        # Disable alarm
+        signal.alarm(0)
+        # Cleanup
         for f in [INPUT_VIDEO, OUTPUT_VIDEO, "edit_map.json", "temp_no_watermark.mp4"]:
-            if os.path.exists(f): os.remove(f)
+            if os.path.exists(f): 
+                try: os.remove(f)
+                except: pass
         cleanup_watermark()
 
 runpod.serverless.start({"handler": handler})

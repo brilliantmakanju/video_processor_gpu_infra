@@ -1,7 +1,9 @@
 import requests
 from storage.gdrive import download_from_gdrive
+from utils.retry import retry
 
 
+@retry(requests.exceptions.RequestException, tries=3, delay=2, backoff=2)
 def download_file(
     url: str,
     output_path: str,
@@ -9,7 +11,7 @@ def download_file(
     timeout: int = 60,
 ):
     """
-    Generic downloader with Google Drive support and progress logging.
+    Generic downloader with Google Drive support, progress logging, and retry logic.
     """
 
     print(f"[DOWNLOAD] Starting")
@@ -36,7 +38,8 @@ def download_file(
         return
 
     # --- Standard HTTP(S) download ---
-    response = requests.get(url, stream=True, timeout=timeout)
+    # Use a shorter connect timeout and longer read timeout
+    response = requests.get(url, stream=True, timeout=(10, timeout))
     response.raise_for_status()
 
     total_size = int(response.headers.get("Content-Length", 0))
