@@ -1,5 +1,5 @@
 from models import Subtitle
-from utils import escape_filter_text
+from utils.text import escape_filter_text
 
 def build_subtitle_filter(subtitle: Subtitle, segment_start: float, 
                          width: int, height: int) -> str:
