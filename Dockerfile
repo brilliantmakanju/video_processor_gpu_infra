@@ -10,7 +10,7 @@ ENV PATH=/usr/local/cuda/bin:/opt/ffmpeg/bin:${PATH}
 ENV FFMPEG_PATH=/opt/ffmpeg/bin/ffmpeg
 ENV FFPROBE_PATH=/opt/ffmpeg/bin/ffprobe
 
-# Install build dependencies and tools
+# Install build dependencies and tools (INCLUDING FREETYPE FOR DRAWTEXT)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     wget \
@@ -26,7 +26,9 @@ RUN apt-get update && \
     libvpx-dev \
     libfdk-aac-dev \
     libssl-dev \
-    libnuma-dev && \
+    libnuma-dev \
+    libfreetype6-dev \
+    libfontconfig1-dev && \
     apt-get remove -y ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
@@ -42,8 +44,8 @@ RUN cd /tmp && \
 # Set PKG_CONFIG_PATH for FFmpeg configure
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}
 
-# Build FFmpeg with GPU support for RTX 5090 (Blackwell architecture - sm_100)
-# Using single architecture to avoid PTX multi-arch issue
+# Build FFmpeg with GPU support + DRAWTEXT filter
+# Multi-GPU support: L4 (sm_89), H100 (sm_90), RTX 5090 (sm_100)
 RUN cd /tmp && \
     git clone --depth 1 --branch n7.1.3 https://git.ffmpeg.org/ffmpeg.git && \
     cd ffmpeg && \
@@ -57,7 +59,8 @@ RUN cd /tmp && \
     --enable-nvenc \
     --enable-nvdec \
     --enable-libnpp \
-    --nvccflags="-gencode arch=compute_100,code=sm_100 -O2" \
+    --nvccflags="-gencode arch=compute_89,code=sm_89 -gencode arch=compute_90,code=sm_90 -gencode arch=compute_100,code=sm_100 -O2" \
+    --disable-ptx \
     --extra-cflags="-I/usr/local/cuda/include" \
     --extra-ldflags="-L/usr/local/cuda/lib64" \
     --enable-libx264 \
@@ -67,6 +70,9 @@ RUN cd /tmp && \
     --enable-libvpx \
     --enable-libfdk-aac \
     --enable-openssl \
+    --enable-libfreetype \
+    --enable-libfontconfig \
+    --enable-filter=drawtext \
     --enable-shared \
     --disable-static \
     --disable-doc && \
@@ -82,6 +88,7 @@ RUN ln -sf /opt/ffmpeg/bin/ffmpeg /usr/local/bin/ffmpeg && \
 # Verify FFmpeg build (non-fatal warnings)
 RUN ffmpeg -version && \
     (ffmpeg -hide_banner -encoders 2>/dev/null | grep nvenc || echo "Note: NVENC will be available at runtime") && \
+    (ffmpeg -hide_banner -filters 2>/dev/null | grep drawtext || echo "Note: drawtext filter will be available at runtime") && \
     (ffmpeg -hide_banner -hwaccels 2>/dev/null | grep cuda || echo "Note: CUDA hwaccel will be available at runtime")
 
 # Install Python dependencies
