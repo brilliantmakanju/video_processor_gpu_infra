@@ -32,6 +32,10 @@ def render_segment_smart(args: Tuple) -> str:
         text = escape_filter_text(f"[{i}]")
         v_filters.append(f"drawtext=text='{text}':fontcolor=yellow:fontsize=20:box=1:boxcolor=black@0.7:x=10:y=10")
     
+    # Force square SAR and consistent pixel format to ensure concat compatibility
+    v_filters.append("setsar=1")
+    v_filters.append("format=yuv420p")
+    
     cmd = [FFMPEG_BIN, "-y", "-ss", str(seg.start), "-t", str(seg.duration), "-i", input_path]
     
     if reg_a and has_audio:
