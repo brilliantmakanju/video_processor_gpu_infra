@@ -119,7 +119,7 @@ PRINT_FFMPEG_OUTPUT = False  # Print FFmpeg output for debugging
 # QUALITY PRESETS
 # ═══════════════════════════════════════════════════════════════
 
-ENABLE_COLOR_GRADING = True
+ENABLE_COLOR_GRADING = False
 
 # You can define quality presets for different use cases
 QUALITY_PRESETS = {

@@ -43,7 +43,7 @@ RUN cd /tmp && \
     cd / && rm -rf /tmp/nv-codec-headers*
 
 # Build FFmpeg with full GPU acceleration (version 6.1.2 - stable)
-# RTX 5090 has compute capability 8.9
+# Multi-architecture: Ada Lovelace (sm_89), Hopper (sm_90), Blackwell (sm_100, sm_120)
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}
 RUN cd /tmp && \
     git clone --depth 1 --branch n6.1.2 https://git.ffmpeg.org/ffmpeg.git && \
@@ -58,7 +58,7 @@ RUN cd /tmp && \
     --enable-nvenc \
     --enable-nvdec \
     --enable-libnpp \
-    --nvccflags="-gencode arch=compute_89,code=sm_89 -O2" \
+    --nvccflags="-gencode arch=compute_89,code=sm_89 -gencode arch=compute_90,code=sm_90 -gencode arch=compute_100,code=sm_100 -gencode arch=compute_120,code=sm_120 -O2" \
     --extra-cflags="-I/usr/local/cuda/include" \
     --extra-ldflags="-L/usr/local/cuda/lib64" \
     --enable-libx264 \

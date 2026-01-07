@@ -171,44 +171,12 @@ def _check_ffmpeg_gpu_support() -> bool:
 
 def _test_hardware_acceleration() -> bool:
     """
-    Run comprehensive hardware acceleration test.
-    Tests: decode, scale_cuda, and encode pipeline.
+    Run hardware acceleration test.
+    Tests GPU encoder first (most reliable), then full pipeline.
     """
     try:
-        log("Running hardware acceleration pipeline test...")
-        
-        # Test 1: Full GPU pipeline (decode -> scale_cuda -> encode)
-        test_cmd = [
-            FFMPEG_BIN, "-y",
-            "-vsync", "0",
-            "-hwaccel", "cuda",
-            "-hwaccel_output_format", "cuda",
-            "-f", "lavfi", "-i", "testsrc=duration=1:size=640x480:rate=30",
-            "-vf", "scale_cuda=320:240",
-            "-c:v", GPU_ENCODER,
-            "-preset", "p4",  # Use fast preset for test
-            "-f", "null", "-"
-        ]
-        
-        result = subprocess.run(
-            test_cmd,
-            capture_output=True,
-            text=True,
-            timeout=15
-        )
-        
-        if result.returncode == 0:
-            log("✓ Full GPU pipeline test passed (decode → scale_cuda → encode)")
-            return True
-        
-        # If full pipeline failed, check what works
-        log(f"⚠️  Full GPU pipeline test failed (exit code {result.returncode})")
-        
-        if PRINT_FFMPEG_OUTPUT:
-            log(f"FFmpeg stderr:\n{result.stderr}")
-        
-        # Test 2: Check if at least encoder works without scale_cuda
-        log("Testing GPU encoder without scale_cuda...")
+        # Test 1: GPU encoder (most reliable test - no CUDA filters)
+        log("Testing GPU encoder...")
         
         encoder_test = [
             FFMPEG_BIN, "-y",
@@ -218,23 +186,52 @@ def _test_hardware_acceleration() -> bool:
             "-f", "null", "-"
         ]
         
-        result2 = subprocess.run(
+        result = subprocess.run(
             encoder_test,
             capture_output=True,
             text=True,
             timeout=10
         )
         
+        if result.returncode != 0:
+            log("❌ GPU encoder test failed")
+            if PRINT_FFMPEG_OUTPUT:
+                log(f"Encoder test stderr:\n{result.stderr}")
+            return False
+        
+        log("✓ GPU encoder works")
+        
+        # Test 2: Full GPU pipeline with proper hwupload
+        # testsrc outputs CPU frames, so we need hwupload_cuda before scale_cuda
+        log("Testing full GPU pipeline (hwupload → scale_cuda → encode)...")
+        
+        pipeline_test = [
+            FFMPEG_BIN, "-y",
+            "-f", "lavfi", "-i", "testsrc=duration=0.5:size=640x480:rate=30",
+            "-vf", "format=nv12,hwupload_cuda,scale_cuda=320:240",
+            "-c:v", GPU_ENCODER,
+            "-preset", "p4",
+            "-f", "null", "-"
+        ]
+        
+        result2 = subprocess.run(
+            pipeline_test,
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+        
         if result2.returncode == 0:
-            log("✓ GPU encoder works (without full pipeline)")
-            log("⚠️  Note: scale_cuda may not be available, will use fallback")
-            # Return True because encoder works, renderer can adapt
+            log("✓ Full GPU pipeline test passed (hwupload → scale_cuda → encode)")
             return True
         else:
-            log("❌ GPU encoder test also failed")
+            # Encoder works but scale_cuda doesn't - still acceptable
+            # The segment renderer can handle this with hwdownload fallback
+            log("⚠️  scale_cuda not working, but encoder is functional")
+            log("   Renderer will use CPU scaling with GPU encoding")
             if PRINT_FFMPEG_OUTPUT:
-                log(f"Encoder test stderr:\n{result2.stderr}")
-            return False
+                log(f"Pipeline test stderr:\n{result2.stderr}")
+            return True  # Return True since encoder works
             
     except subprocess.TimeoutExpired:
         log("❌ Hardware acceleration test timed out")
