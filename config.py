@@ -39,6 +39,7 @@ FFMPEG_BIN = os.environ.get("FFMPEG_PATH", "ffmpeg")
 FFPROBE_BIN = os.environ.get("FFPROBE_PATH", "ffprobe")
 
 INPUT_VIDEO = os.environ.get("INPUT_VIDEO", "input.mp4")
+OUTPUT_VIDEO = os.environ.get("OUTPUT_VIDEO", "output.mp4")
 EDITMAP_JSON = os.environ.get("EDITMAP_JSON", "editmap.json")
 
 # Smart copy mode - copy segments without re-encoding when possible
