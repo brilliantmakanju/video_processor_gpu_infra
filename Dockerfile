@@ -56,12 +56,10 @@ RUN cd /tmp && \
     --enable-nonfree \
     --enable-gpl \
     --enable-version3 \
-    --enable-cuda-nvcc \
     --enable-cuvid \
     --enable-nvenc \
     --enable-nvdec \
     --enable-libnpp \
-    --nvccflags="-gencode arch=compute_89,code=sm_89 -gencode arch=compute_90,code=sm_90 -gencode arch=compute_100,code=sm_100 -gencode arch=compute_120,code=sm_120 -O2" \
     --extra-cflags="-I/usr/local/cuda/include" \
     --extra-ldflags="-L/usr/local/cuda/lib64" \
     --enable-libx264 \
@@ -73,27 +71,7 @@ RUN cd /tmp && \
     --enable-openssl \
     --enable-shared \
     --disable-static \
-    --disable-doc \
-    --enable-decoder=h264 \
-    --enable-decoder=h264_cuvid \
-    --enable-decoder=hevc \
-    --enable-decoder=hevc_cuvid \
-    --enable-decoder=vp9 \
-    --enable-decoder=vp9_cuvid \
-    --enable-decoder=av1 \
-    --enable-decoder=av1_cuvid \
-    --enable-encoder=h264_nvenc \
-    --enable-encoder=hevc_nvenc \
-    --enable-encoder=av1_nvenc \
-    --enable-encoder=libx264 \
-    --enable-encoder=libx265 \
-    --enable-filter=scale_cuda \
-    --enable-filter=thumbnail_cuda \
-    --enable-filter=overlay_cuda \
-    --enable-hwaccel=h264_nvdec \
-    --enable-hwaccel=hevc_nvdec \
-    --enable-hwaccel=vp9_nvdec \
-    --enable-hwaccel=av1_nvdec || (cat ffbuild/config.log && exit 1) && \
+    --disable-doc || (cat ffbuild/config.log && exit 1) && \
     make -j$(nproc) && \
     make install && \
     cd / && rm -rf /tmp/ffmpeg
