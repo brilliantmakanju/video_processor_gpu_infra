@@ -9,8 +9,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    build-essential yasm cmake libtool libc6 libc6-dev unzip wget curl ca-certificates \
-    libnuma1 libnuma-dev pkg-config git && \
+    ffmpeg wget curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # Install nv-codec-headers
