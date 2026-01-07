@@ -21,11 +21,11 @@ def handler(job):
     """Main RunPod handler with Global Timeout and Robust Error Handling."""
     
     def timeout_handler(signum, frame):
-        raise TimeoutError("Global job timeout reached (30 minutes)")
+        raise TimeoutError("Global job timeout reached (2 hours)")
 
-    # Set global timeout of 30 minutes (1800 seconds)
+    # Set global timeout of 2 hours (7200 seconds)
     signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(1800)
+    signal.alarm(7200)
 
     try:
         if not job or 'input' not in job:

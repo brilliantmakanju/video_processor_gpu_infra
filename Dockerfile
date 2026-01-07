@@ -9,8 +9,36 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    ffmpeg wget curl ca-certificates && \
+    build-essential yasm cmake libtool libc6 libc6-dev unzip wget curl ca-certificates \
+    libnuma1 libnuma-dev pkg-config git && \
     rm -rf /var/lib/apt/lists/*
+
+# Install nv-codec-headers
+RUN git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git && \
+    cd nv-codec-headers && make install && cd .. && rm -rf nv-codec-headers
+
+# Compile FFmpeg with NVIDIA support
+RUN git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg/ && \
+    cd ffmpeg && \
+    ./configure \
+    --enable-nonfree \
+    --enable-cuda-nvcc \
+    --enable-libnpp \
+    --extra-cflags=-I/usr/local/cuda/include \
+    --extra-ldflags=-L/usr/local/cuda/lib64 \
+    --disable-static \
+    --enable-shared \
+    --enable-nvenc \
+    --enable-nvdec \
+    --enable-cuvid \
+    --enable-hwaccel=cuda \
+    --enable-filter=scale_cuda \
+    --enable-libx264 \
+    --enable-gpl && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    cd .. && rm -rf ffmpeg
 
 # Install Python dependencies
 RUN pip install --no-cache-dir runpod gdown requests
