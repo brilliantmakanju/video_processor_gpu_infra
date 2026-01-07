@@ -71,10 +71,12 @@ RUN cd /tmp && \
     --enable-openssl \
     --enable-libfreetype \
     --enable-libfontconfig \
-    --enable-filter=drawtext \
     --enable-shared \
     --disable-static \
-    --disable-doc && \
+    --disable-doc || (cat ffbuild/config.log && exit 1) && \
+    echo "=== Checking if drawtext filter is enabled ===" && \
+    (grep "CONFIG_DRAWTEXT_FILTER=yes" ffbuild/config.mak || echo "WARNING: drawtext not in config") && \
+    echo "=== Building FFmpeg ===" && \
     make -j$(nproc) && \
     make install && \
     ldconfig && \
