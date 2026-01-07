@@ -7,6 +7,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
 ENV PATH=/opt/ffmpeg/bin:${PATH}
+ENV FFMPEG_PATH=/opt/ffmpeg/bin/ffmpeg
+ENV FFPROBE_PATH=/opt/ffmpeg/bin/ffprobe
 
 # Install build dependencies and tools
 RUN apt-get update && \
@@ -28,6 +30,7 @@ RUN apt-get update && \
     nvidia-cuda-toolkit \
     libnuma-dev \
     ca-certificates && \
+    apt-get remove -y ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # Install NVIDIA Video Codec SDK headers (version 12.2 for CUDA 12.4)
