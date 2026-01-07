@@ -13,3 +13,5 @@ dist/
 .coverage
 htmlcov/
 .DS_Store
+viper
+viper/
