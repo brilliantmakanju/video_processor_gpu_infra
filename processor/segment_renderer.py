@@ -43,14 +43,17 @@ def render_segment_smart(args: Tuple) -> str:
         cmd.extend(["-filter_complex", filter_complex, "-map", "[v]", "-map", "[a]"])
     else:
         cmd.extend(["-vf", ",".join(v_filters)])
-        if has_audio: cmd.extend(["-c:a", "aac", "-b:a", AUDIO_BITRATE])
+        if has_audio: 
+            cmd.extend(["-map", "0:v:0", "-map", "0:a:0", "-c:a", "aac", "-b:a", AUDIO_BITRATE])
+        else:
+            cmd.extend(["-map", "0:v:0"])
     
     use_gpu = check_gpu_support()
     if use_gpu:
-        cmd.extend(["-c:v", GPU_ENCODER, "-preset", GPU_PRESET, "-rc", "vbr", "-cq", str(CQ_QUALITY), "-pix_fmt", "yuv420p"])
+        cmd.extend(["-c:v", GPU_ENCODER, "-preset", GPU_PRESET, "-rc", "vbr", "-cq", str(CQ_QUALITY)])
     else:
-        cmd.extend(["-c:v", "libx264", "-preset", ENCODING_PRESET, "-crf", str(CRF_QUALITY), "-pix_fmt", "yuv420p"])
+        cmd.extend(["-c:v", "libx264", "-preset", ENCODING_PRESET, "-crf", str(CRF_QUALITY)])
     
-    cmd.extend(["-movflags", "+faststart", temp_out])
+    cmd.extend(["-pix_fmt", "yuv420p", "-movflags", "+faststart", "-vsync", "cfr", temp_out])
     run_ffmpeg(cmd, timeout=MAX_SEGMENT_TIMEOUT)
     return temp_out

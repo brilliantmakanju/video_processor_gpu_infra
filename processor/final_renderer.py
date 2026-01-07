@@ -36,7 +36,11 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
             for _, sf in segment_files:
                 f.write(f"file '{os.path.abspath(sf)}'\n")
         
-        final_cmd = [FFMPEG_BIN, "-y", "-f", "concat", "-safe", "0", "-i", concat_list, "-c", "copy", "-movflags", "+faststart", output_path]
+        final_cmd = [
+            FFMPEG_BIN, "-y", "-f", "concat", "-safe", "0", 
+            "-fflags", "+genpts", "-i", concat_list, 
+            "-c", "copy", "-movflags", "+faststart", output_path
+        ]
         run_ffmpeg(final_cmd, timeout=600)
     finally:
         if os.path.exists(temp_dir):

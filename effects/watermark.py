@@ -126,17 +126,20 @@ def apply_watermark(input_video: str, output_video: str,
     # Input video
     cmd.extend(["-i", input_video])
     
-    # Watermark input (loop for GIF)
+    # Watermark input (loop for images and GIFs)
     if is_gif:
         cmd.extend(["-ignore_loop", "0", "-i", watermark_path])
     else:
-        cmd.extend(["-i", watermark_path])
+        # For static images, we MUST loop so shortest=1 works correctly
+        cmd.extend(["-loop", "1", "-i", watermark_path])
     
-    # Apply filter
-    cmd.extend(["-filter_complex", filter_str])
+    # Apply filter with explicit output label
+    cmd.extend(["-filter_complex", f"{filter_str}[outv]"])
     
-    # Output encoding
+    # Output encoding with explicit mapping
     cmd.extend([
+        "-map", "[outv]",
+        "-map", "0:a?",
         "-c:v", "libx264",
         "-preset", "fast",
         "-crf", "18",
