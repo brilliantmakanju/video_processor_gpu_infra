@@ -13,12 +13,10 @@ ENV FFPROBE_PATH=/opt/ffmpeg/bin/ffprobe
 # Install build dependencies and tools
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    build-essential \
     yasm \
     nasm \
     cmake \
     git \
-    wget \
     pkg-config \
     libx264-dev \
     libx265-dev \
@@ -28,7 +26,6 @@ RUN apt-get update && \
     libfdk-aac-dev \
     libssl-dev \
     libnuma-dev \
-    ca-certificates && \
     apt-get remove -y ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
@@ -44,6 +41,13 @@ RUN cd /tmp && \
 # Build FFmpeg with full GPU acceleration (version 6.1.2 - stable)
 # Multi-architecture: Ada Lovelace (sm_89), Hopper (sm_90), Blackwell (sm_100, sm_120)
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}
+# Debug environment
+RUN echo "PATH=$PATH" && \
+    ls -la /usr/local/cuda/bin || echo "No cuda bin" && \
+    which nvcc || echo "No nvcc in PATH" && \
+    nvcc --version || echo "nvcc version failed" && \
+    which git || echo "No git in PATH"
+
 RUN cd /tmp && \
     git clone --depth 1 --branch n7.1.3 https://git.ffmpeg.org/ffmpeg.git && \
     cd ffmpeg && \
@@ -89,7 +93,7 @@ RUN cd /tmp && \
     --enable-hwaccel=h264_nvdec \
     --enable-hwaccel=hevc_nvdec \
     --enable-hwaccel=vp9_nvdec \
-    --enable-hwaccel=av1_nvdec && \
+    --enable-hwaccel=av1_nvdec || (cat ffbuild/config.log && exit 1) && \
     make -j$(nproc) && \
     make install && \
     cd / && rm -rf /tmp/ffmpeg
