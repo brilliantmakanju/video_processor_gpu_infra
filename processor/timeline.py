@@ -34,11 +34,11 @@ def create_segments(edits: List[Edit], subtitles: List[Subtitle],
         overlapping_subs = [s for s in subtitles if not (s.end <= start or s.start >= end)]
         
         seg = Segment(
-            edit=active_edit,
             end=end,
             start=start,
-            is_original=(active_edit is None),
-            subtitles=overlapping_subs
+            edit=active_edit,
+            subtitles=overlapping_subs,
+            is_original=(active_edit is None)
         )
         seg.needs_processing, seg.can_copy = analyze_segment_processing(seg, orig_w, orig_h, out_w, out_h)
         segments.append(seg)

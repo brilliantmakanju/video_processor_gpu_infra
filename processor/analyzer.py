@@ -13,10 +13,10 @@ def parse_edit_map(data: Dict[str, Any]) -> Tuple[List[Edit], List[Subtitle]]:
     for e in data.get("edits", []):
         try:
             edits.append(Edit(
-                end=float(e.get("end", 0)),
-                start=float(e.get("start", 0)),
                 zoom=e.get("zoom", 1.0),
+                end=float(e.get("end", 0)),
                 type=e.get("type", "zoom"),
+                start=float(e.get("start", 0)),
                 speed=float(e.get("speed", 1.0)),
                 is_locked=e.get("isLocked", False),
                 anchor_x=float(e.get("anchorX", 0.5)),
@@ -28,10 +28,10 @@ def parse_edit_map(data: Dict[str, Any]) -> Tuple[List[Edit], List[Subtitle]]:
     for s in data.get("subtitles", []):
         try:
             subtitles.append(Subtitle(
-                text=str(s.get("text", "")),
-                end=float(s.get("end", 0)),
-                start=float(s.get("start", 0)),
                 style=s.get("style", {}),
+                end=float(s.get("end", 0)),
+                text=str(s.get("text", "")),
+                start=float(s.get("start", 0)),
                 is_locked=s.get("isLocked", False)
             ))
         except (ValueError, TypeError, KeyError):
