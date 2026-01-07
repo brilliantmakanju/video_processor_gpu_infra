@@ -1,55 +1,148 @@
+import os
+import tempfile
+from typing import List
 from models import Subtitle
 from utils.text import escape_filter_text
 
+# Global cache for ASS files (cleaned up at end)
+_ASS_FILE_CACHE = {}
+
 def build_subtitle_filter(subtitle: Subtitle, segment_start: float, 
                          width: int, height: int) -> str:
-    """Build professional-looking subtitle filter with background box and thick outline."""
+    """
+    Build text overlay filter using ASS subtitles (works without drawtext filter).
+    
+    This is a DROP-IN REPLACEMENT - keeps the same interface, but uses ASS format
+    internally instead of drawtext. No changes needed to your existing code!
+    
+    Returns: Filter string to add to your FFmpeg filter chain
+    """
+    
+    # Create a temporary ASS file for this subtitle
+    ass_file = _create_single_subtitle_ass(
+        subtitle, segment_start, width, height
+    )
+    
+    # Cache it so we can clean up later
+    _ASS_FILE_CACHE[ass_file] = True
+    
+    # Return subtitles filter (works without drawtext!)
+    escaped_path = ass_file.replace('\\', '/').replace(':', '\\:').replace("'", "\\'")
+    return f"subtitles='{escaped_path}'"
+
+
+def _create_single_subtitle_ass(subtitle: Subtitle, segment_start: float,
+                                width: int, height: int) -> str:
+    """Create ASS file for a single text overlay."""
     
     style = subtitle.style
-    text = escape_filter_text(subtitle.text)
+    text = subtitle.text
     
-    # Position: default bottom center (85% from top)
+    # Position
     pos = style.get("position", {"x": 50, "y": 85})
-    x_pct = pos["x"]   # 0-100 (% of screen width)
-    y_pct = pos["y"]   # 0-100 (% of screen height)
-    
-    # Calculate pixel positions
-    base_y = int((y_pct / 100) * height)
+    x_pct = pos["x"]
+    y_pct = pos["y"]
     
     # Timing relative to segment start
-    sub_end = subtitle.end - segment_start
     sub_start = max(0.0, subtitle.start - segment_start)
+    sub_end = subtitle.end - segment_start
     
-    # Styling from subtitle.style
-    font_size = style.get("fontSize", 38)                  
-    outline_width = style.get("strokeWidth", 5)              
+    # Styling
+    font_size = style.get("fontSize", 38)
+    outline_width = style.get("strokeWidth", 5)
     text_align = style.get("textAlign", "center").lower()
-    primary_color = style.get("color", "#FFFFFF").lstrip("#")   
+    primary_color = style.get("color", "#FFFFFF").lstrip("#")
     outline_color = style.get("strokeColor", "#000000").lstrip("#")
     
+    # ASS alignment codes
+    # Bottom: 1=left, 2=center, 3=right
+    # Middle: 4=left, 5=center, 6=right  
+    # Top: 7=left, 8=center, 9=right
     
-    # Horizontal alignment
+    # Determine vertical position (top/middle/bottom)
+    if y_pct < 33:
+        v_align = 7  # Top row
+    elif y_pct > 66:
+        v_align = 1  # Bottom row
+    else:
+        v_align = 4  # Middle row
+    
+    # Add horizontal alignment
     if text_align == "center":
-        x_expr = "(w-tw)/2"
+        alignment = v_align + 1
     elif text_align == "right":
-        x_expr = f"w-tw-{int((100 - x_pct)/100 * width)}"
-    else:  # left or default
-        x_expr = f"{int((x_pct / 100) * width)}"
+        alignment = v_align + 2
+    else:  # left
+        alignment = v_align
+    
+    # Convert hex colors to ASS format (ABGR with alpha channel)
+    primary_ass = f"&H00{primary_color[4:6]}{primary_color[2:4]}{primary_color[0:2]}"
+    outline_ass = f"&H00{outline_color[4:6]}{outline_color[2:4]}{outline_color[0:2]}"
+    
+    # Calculate vertical margin for precise positioning
+    margin_v = int(((100 - y_pct) / 100) * height) if y_pct > 50 else int((y_pct / 100) * height)
+    
+    # Create temporary ASS file
+    fd, ass_path = tempfile.mkstemp(suffix='.ass', text=True, delete=False)
+    
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        f.write("[Script Info]\n")
+        f.write("ScriptType: v4.00+\n")
+        f.write(f"PlayResX: {width}\n")
+        f.write(f"PlayResY: {height}\n")
+        f.write("WrapStyle: 0\n")
+        f.write("ScaledBorderAndShadow: yes\n\n")
+        
+        f.write("[V4+ Styles]\n")
+        f.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
+        
+        # Style with proper outline and positioning
+        f.write(f"Style: Default,Arial,{font_size},{primary_ass},{primary_ass},{outline_ass},&H80000000,-1,0,0,0,100,100,0,0,1,{outline_width},0,{alignment},10,10,{margin_v},1\n\n")
+        
+        f.write("[Events]\n")
+        f.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
+        
+        # Format time
+        start_str = _format_ass_time(sub_start)
+        end_str = _format_ass_time(sub_end)
+        
+        # Clean text for ASS
+        text_clean = text.replace('\n', '\\N').replace('\r', '')
+        
+        f.write(f"Dialogue: 0,{start_str},{end_str},Default,,0,0,0,,{text_clean}\n")
+    
+    return ass_path
 
-    # The magic: professional caption style
-    return (
-        f"drawtext="
-        f"x={x_expr}:"
-        f"y={base_y}:" 
-        f"text='{text}':"
-        f"fontsize={font_size}:"
-        f"fontcolor=0x{primary_color.upper()}:"
-        f"borderw={outline_width}:"
-        f"bordercolor=0x{outline_color.upper()}:"
-        # Background box: black, 60% opacity, generous padding
-        # f"box=1:"
-        # f"boxborderw=16:"
-        # f"boxcolor=0x000000@0.65:"
-        # Only show during subtitle timing
-        f"enable='between(t,{sub_start:.3f},{sub_end:.3f})'"
-    )
+
+def _format_ass_time(seconds: float) -> str:
+    """Format seconds as H:MM:SS.CS"""
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    cs = int((seconds % 1) * 100)
+    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+
+def cleanup_subtitle_files():
+    """
+    Call this after rendering is complete to clean up temporary ASS files.
+    Add this to your cleanup code at the end of video processing.
+    """
+    for ass_file in _ASS_FILE_CACHE.keys():
+        try:
+            if os.path.exists(ass_file):
+                os.unlink(ass_file)
+        except Exception as e:
+            print(f"Warning: Could not delete {ass_file}: {e}")
+    
+    _ASS_FILE_CACHE.clear()
+
+
+# Backwards compatibility - keep the old function signature
+def build_subtitle_filter_drawtext(subtitle: Subtitle, segment_start: float, 
+                                   width: int, height: int) -> str:
+    """
+    DEPRECATED: Old drawtext version (doesn't work without drawtext filter).
+    Use build_subtitle_filter() instead - it works without drawtext!
+    """
+    return build_subtitle_filter(subtitle, segment_start, width, height)
