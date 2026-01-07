@@ -44,8 +44,8 @@ RUN cd /tmp && \
 # Set PKG_CONFIG_PATH for FFmpeg configure
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}
 
-# Build FFmpeg with GPU support for RTX 5090 (Blackwell architecture - sm_100)
-# Using single architecture to avoid PTX multi-arch issue
+# Build FFmpeg with GPU support + DRAWTEXT filter
+# Multi-GPU support: L4 (sm_89), H100 (sm_90), RTX 5090 (sm_100)
 RUN cd /tmp && \
     git clone --depth 1 --branch n7.1.3 https://git.ffmpeg.org/ffmpeg.git && \
     cd ffmpeg && \
@@ -59,7 +59,7 @@ RUN cd /tmp && \
     --enable-nvenc \
     --enable-nvdec \
     --enable-libnpp \
-    --nvccflags="-gencode arch=compute_100,code=sm_100 -O2" \
+    --nvccflags="-gencode arch=compute_89,code=sm_89 -O2" \
     --extra-cflags="-I/usr/local/cuda/include" \
     --extra-ldflags="-L/usr/local/cuda/lib64" \
     --enable-libx264 \
