@@ -6,7 +6,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 ENV LD_LIBRARY_PATH=/opt/ffmpeg/lib:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
-ENV PATH=/opt/ffmpeg/bin:${PATH}
+ENV PATH=/usr/local/cuda/bin:/opt/ffmpeg/bin:${PATH}
 ENV FFMPEG_PATH=/opt/ffmpeg/bin/ffmpeg
 ENV FFPROBE_PATH=/opt/ffmpeg/bin/ffprobe
 
@@ -27,7 +27,6 @@ RUN apt-get update && \
     libvpx-dev \
     libfdk-aac-dev \
     libssl-dev \
-    nvidia-cuda-toolkit \
     libnuma-dev \
     ca-certificates && \
     apt-get remove -y ffmpeg && \
@@ -46,7 +45,7 @@ RUN cd /tmp && \
 # Multi-architecture: Ada Lovelace (sm_89), Hopper (sm_90), Blackwell (sm_100, sm_120)
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}
 RUN cd /tmp && \
-    git clone --depth 1 --branch n6.1.2 https://git.ffmpeg.org/ffmpeg.git && \
+    git clone --depth 1 --branch n7.1.3 https://git.ffmpeg.org/ffmpeg.git && \
     cd ffmpeg && \
     ./configure \
     --prefix=/opt/ffmpeg \
