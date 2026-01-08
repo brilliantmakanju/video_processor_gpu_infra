@@ -2,7 +2,7 @@ import os
 from config import (
     FFMPEG_BIN, SMART_COPY_MODE, AUDIO_BITRATE, CQ_QUALITY, 
     MAX_SEGMENT_TIMEOUT, USE_SCALE_CUDA, GPU_SCALE_ALGO,
-    DECODER_THREADS
+    DECODER_THREADS, DECODER_SURFACES
 )
 from typing import Tuple
 from models import Segment
@@ -64,15 +64,17 @@ def render_segment_smart(args: tuple) -> str:
         "-hwaccel", "cuda",
     ]
 
-    # 🔑 KEY FIX: Only use -hwaccel_output_format cuda for pure GPU paths.
-    # For hybrid paths, omitting it lets FFmpeg download frames to RAM automatically.
-    if not needs_cpu:
+    # 🔑 KEY FIX: For hybrid paths, force decoder to output NV12 (system memory).
+    # For pure GPU paths, force decoder to output CUDA (GPU memory).
+    if needs_cpu:
+        cmd.extend(["-hwaccel_output_format", "nv12"])
+    else:
         cmd.extend(["-hwaccel_output_format", "cuda"])
 
     cmd.extend([
         "-hwaccel_device", "0",
         "-extra_hw_frames", "8",
-        "-threads", str(DECODER_THREADS), # Limit threads to avoid "too many surfaces"
+        "-threads", str(DECODER_THREADS),
         "-ss", str(seg.start),
         "-t", str(seg.duration),
         "-i", input_path,
@@ -147,13 +149,10 @@ def render_segment_smart(args: tuple) -> str:
         "-fps_mode", "passthrough",
     ])
 
-    # Only force pix_fmt if we touched CPU
-    if is_hybrid:
-        cmd.extend(["-pix_fmt", "yuv420p"])
-    else:
-        # Pure GPU path: ensure we output something NVENC likes if it's not already cuda
-        # But since we use -hwaccel_output_format cuda, it's already cuda.
-        pass
+    # 🔑 CRITICAL: Never use -pix_fmt yuv420p with NVENC if we are feeding it CUDA frames.
+    # NVENC handles the pixel format natively on the GPU.
+    # if is_hybrid:
+    #     cmd.extend(["-pix_fmt", "yuv420p"])
 
     cmd.append(temp_out)
 

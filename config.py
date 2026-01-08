@@ -31,7 +31,8 @@ NVENC_MAXRATE = "20M"  # Maximum bitrate
 NVENC_BUFSIZE = "40M"  # Buffer size (2x maxrate recommended)
 
 # Decoder settings
-DECODER_THREADS = 4  # Limit decoder threads to avoid "too many surfaces" error
+DECODER_THREADS = 2  # Keep it low for stability
+DECODER_SURFACES = 30 # L4 limit is around 32
 
 # ═══════════════════════════════════════════════════════════════
 # PROCESSING CONFIGURATION
