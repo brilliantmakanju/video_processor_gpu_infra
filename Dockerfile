@@ -27,6 +27,7 @@ RUN apt-get update && \
     libfdk-aac-dev \
     libssl-dev \
     libnuma-dev \
+    libass-dev \
     libfreetype6-dev \
     libfontconfig1-dev && \
     apt-get remove -y ffmpeg && \
@@ -54,6 +55,7 @@ RUN cd /tmp && \
     --enable-nonfree \
     --enable-gpl \
     --enable-version3 \
+    --enable-libass \
     --enable-cuda-nvcc \
     --enable-cuvid \
     --enable-nvenc \
