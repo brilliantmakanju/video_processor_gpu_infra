@@ -1,5 +1,8 @@
 import os
-from config import *
+from config import (
+    FFMPEG_BIN, SMART_COPY_MODE, AUDIO_BITRATE, CQ_QUALITY, 
+    MAX_SEGMENT_TIMEOUT, USE_SCALE_CUDA, GPU_SCALE_ALGO
+)
 from typing import Tuple
 from models import Segment
 from utils.ffmpeg import run_ffmpeg
@@ -90,49 +93,66 @@ def render_segment_smart(args: Tuple) -> str:
 
 def _build_gpu_filter_chain(seg, out_w, out_h, orig_w, orig_h, has_audio, 
                             debug_overlay, seg_idx, reg_v):
-    """Build optimized GPU filter chain - pass reg_v from outside."""
+    """
+    Build GPU filter chain following the Hybrid/Pure GPU strategy.
+    
+    Option 1: Hybrid Pipeline (For Effects)
+    GPU Decode -> Download -> CPU Filters -> Upload -> GPU Encode
+    
+    Option 2: Pure GPU (For Simple Segments)
+    GPU Decode -> scale_cuda -> GPU Encode
+    """
     gpu_filters = []
     
     # Check if we need CPU processing (reg_v already computed)
     needs_cpu_filters = bool(reg_v) or debug_overlay
     
     if needs_cpu_filters:
-        # Must go to CPU for effects/debug overlay
+        # OPTION 1: HYBRID PIPELINE
+        # 1. Download to CPU immediately after decode
         gpu_filters.append("hwdownload")
-        gpu_filters.append("format=yuv420p")
+        gpu_filters.append("format=nv12") # Native format from NVDEC
         
-        # Scaling on CPU
+        # 2. Scaling on CPU (if needed)
         if out_w != orig_w or out_h != orig_h:
             gpu_filters.append(f"scale={out_w}:{out_h}:flags=lanczos")
         
-        # Add software filters (already computed)
+        # 3. Add software filters (effects)
         if reg_v:
             gpu_filters.extend(reg_v)
         
-        # Debug overlay
-        # if debug_overlay:
-        #     text = escape_filter_text(f"[{seg_idx}]")
-        #     gpu_filters.append(
-        #         f"drawtext=text='{text}':fontcolor=yellow:fontsize=20:"
-        #         f"box=1:boxcolor=black@0.7:x=10:y=10"
-        #     )
+        # 4. Debug overlay
+        if debug_overlay:
+            text = escape_filter_text(f"[{seg_idx}]")
+            gpu_filters.append(
+                f"drawtext=text='{text}':fontcolor=yellow:fontsize=20:"
+                f"box=1:boxcolor=black@0.7:x=10:y=10"
+            )
         
+        # 5. Final format and SAR
         gpu_filters.append("setsar=1")
+        gpu_filters.append("format=yuv420p")
         
-        # Upload back to GPU for encoding
+        # 6. Upload back to GPU for encoding
         gpu_filters.append("hwupload_cuda")
     else:
-        # PURE GPU PATH - use scale_npp for CUDA frames
-        if out_w != orig_w or out_h != orig_h:
-            gpu_filters.append(f"scale_npp={out_w}:{out_h}:interp_algo=lanczos:format=yuv420p")
-        else:
-            gpu_filters.append("scale_npp=format=yuv420p")
+        # OPTION 2: PURE GPU PATH
+        # Stay on GPU for maximum speed
         
-        # Add setsar for GPU path
-        gpu_filters.append("hwdownload")
-        gpu_filters.append("format=yuv420p")
-        gpu_filters.append("setsar=1")
-        gpu_filters.append("hwupload_cuda")
+        # Determine scaling filter
+        scale_filter = "scale_cuda" if USE_SCALE_CUDA else "scale_npp"
+        
+        if out_w != orig_w or out_h != orig_h:
+            gpu_filters.append(f"{scale_filter}={out_w}:{out_h}:interp_algo={GPU_SCALE_ALGO}")
+        
+        # For Pure GPU path, we try to avoid hwdownload/hwupload.
+        # However, we still need to ensure the format is compatible with NVENC.
+        # scale_cuda output is cuda, which NVENC accepts.
+        # We'll add a simple format check if needed, but usually it's not.
+        
+        # If we need setsar=1, we MUST download. Let's check if we can skip it.
+        # For now, let's follow the user's "Pure GPU" definition strictly.
+        pass
     
     return gpu_filters
 
