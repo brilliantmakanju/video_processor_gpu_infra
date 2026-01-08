@@ -10,62 +10,130 @@ from utils.gpu import check_gpu_support, get_gpu_compute_capability
 from utils.text import escape_filter_text
 from effects.registry import get_segment_filters
 
-def render_segment_smart(args: Tuple) -> str:
-    """Ultra-optimized segment rendering with full GPU acceleration."""
-    (i, seg, input_path, temp_dir, fps, debug_overlay, has_audio,
-     orig_w, orig_h, out_w, out_h) = args
-    
+def render_segment_smart(args: tuple) -> str:
+    """
+    Deterministic, GPU-accelerated segment renderer.
+
+    Guarantees:
+    - CUDA frames NEVER touch CPU filters
+    - CPU filters ALWAYS receive system-memory frames
+    - NVENC ALWAYS receives CUDA frames
+    """
+
+    (
+        i,
+        seg,
+        input_path,
+        temp_dir,
+        fps,
+        debug_overlay,
+        has_audio,
+        orig_w,
+        orig_h,
+        out_w,
+        out_h,
+    ) = args
+
     temp_out = os.path.join(temp_dir, f"seg_{i:04d}.mp4")
-    
-    # Smart copy mode for segments without effects
+
+    # ─────────────────────────────────────────────
+    # SMART COPY (no filters, no re-encode)
+    # ─────────────────────────────────────────────
     if seg.can_copy and SMART_COPY_MODE:
-        cmd = [FFMPEG_BIN, "-y", "-ss", str(seg.start), "-t", str(seg.duration),
-               "-i", input_path, "-c", "copy", "-avoid_negative_ts", "make_zero", temp_out]
+        cmd = [
+            FFMPEG_BIN,
+            "-y",
+            "-ss", str(seg.start),
+            "-t", str(seg.duration),
+            "-i", input_path,
+            "-c", "copy",
+            "-avoid_negative_ts", "make_zero",
+            temp_out,
+        ]
         run_ffmpeg(cmd)
         return temp_out
-    
-    use_gpu = check_gpu_support()
-    
-    if not use_gpu:
+
+    # ─────────────────────────────────────────────
+    # GPU availability
+    # ─────────────────────────────────────────────
+    if not check_gpu_support():
         return _render_cpu_fallback(args, temp_out)
-    
-    # Get filters ONCE
+
+    # ─────────────────────────────────────────────
+    # Collect filters
+    # ─────────────────────────────────────────────
     reg_v, reg_a = get_segment_filters(seg, out_w, out_h, has_audio)
-    
-    # Full GPU pipeline
-    cmd = [FFMPEG_BIN, "-y"]
-    
-    # GPU decoding with NVDEC
-    cmd.extend([
-        "-vsync", "0",
+
+    # ─────────────────────────────────────────────
+    # Base FFmpeg command
+    # ─────────────────────────────────────────────
+    cmd = [
+        FFMPEG_BIN,
+        "-y",
+
+        # Decode directly into CUDA
         "-hwaccel", "cuda",
         "-hwaccel_output_format", "cuda",
         "-hwaccel_device", "0",
         "-extra_hw_frames", "8",
-    ])
-    
-    cmd.extend(["-ss", str(seg.start), "-t", str(seg.duration), "-i", input_path])
-    
-    # Build GPU filter chain
+
+        "-ss", str(seg.start),
+        "-t", str(seg.duration),
+        "-i", input_path,
+    ]
+
+    # ─────────────────────────────────────────────
+    # Build SAFE filter chain
+    # ─────────────────────────────────────────────
     gpu_filters = _build_gpu_filter_chain(
-        seg, out_w, out_h, orig_w, orig_h, has_audio, debug_overlay, i, reg_v
+        seg=seg,
+        out_w=out_w,
+        out_h=out_h,
+        orig_w=orig_w,
+        orig_h=orig_h,
+        has_audio=has_audio,
+        debug_overlay=debug_overlay,
+        seg_idx=i,
+        reg_v=reg_v,
     )
-    
-    # Apply filters
+
+    # ─────────────────────────────────────────────
+    # Apply filters & mapping
+    # ─────────────────────────────────────────────
     if reg_a and has_audio:
-        # Complex filter with audio
+        # Video + Audio filter graph
         v_chain = ",".join(gpu_filters)
         a_chain = ",".join(reg_a)
-        filter_complex = f"[0:v]{v_chain}[v];[0:a]{a_chain}[a]"
-        cmd.extend(["-filter_complex", filter_complex, "-map", "[v]", "-map", "[a]"])
-        cmd.extend(["-c:a", "aac", "-b:a", AUDIO_BITRATE])
+
+        filter_complex = (
+            f"[0:v]{v_chain}[v];"
+            f"[0:a]{a_chain}[a]"
+        )
+
+        cmd.extend([
+            "-filter_complex", filter_complex,
+            "-map", "[v]",
+            "-map", "[a]",
+            "-c:a", "aac",
+            "-b:a", AUDIO_BITRATE,
+        ])
     else:
-        # Video only
-        cmd.extend(["-vf", ",".join(gpu_filters)])
+        # Video-only filters
+        cmd.extend([
+            "-vf", ",".join(gpu_filters),
+            "-map", "0:v:0",
+        ])
+
         if has_audio:
-            cmd.extend(["-c:a", "aac", "-b:a", AUDIO_BITRATE])
-    
-    # GPU encoding with NVENC
+            cmd.extend([
+                "-map", "0:a:0",
+                "-c:a", "aac",
+                "-b:a", AUDIO_BITRATE,
+            ])
+
+    # ─────────────────────────────────────────────
+    # NVENC encode (CUDA frames guaranteed)
+    # ─────────────────────────────────────────────
     cmd.extend([
         "-c:v", "h264_nvenc",
         "-preset", "p7",
@@ -84,77 +152,125 @@ def render_segment_smart(args: Tuple) -> str:
         "-surfaces", "64",
         "-movflags", "+faststart",
         "-fps_mode", "passthrough",
-        temp_out
+        temp_out,
     ])
-    
+
     run_ffmpeg(cmd, timeout=MAX_SEGMENT_TIMEOUT)
     return temp_out
 
 
-def _build_gpu_filter_chain(seg, out_w, out_h, orig_w, orig_h, has_audio, 
-                            debug_overlay, seg_idx, reg_v):
+def _build_gpu_filter_chain(
+    seg,
+    out_w,
+    out_h,
+    orig_w,
+    orig_h,
+    has_audio,
+    debug_overlay,
+    seg_idx,
+    reg_v,
+):
     """
-    Build GPU filter chain following the Hybrid/Pure GPU strategy.
-    
-    Option 1: Hybrid Pipeline (For Effects)
-    GPU Decode -> Download -> CPU Filters -> Upload -> GPU Encode
-    
-    Option 2: Pure GPU (For Simple Segments)
-    GPU Decode -> scale_cuda -> GPU Encode
+    Build a SAFE filter chain with explicit GPU ↔ CPU boundaries.
+
+    Rules:
+    - CUDA frames may ONLY touch GPU filters
+    - First CPU filter MUST be preceded by hwdownload
+    - Once on CPU, we stay on CPU until hwupload_cuda
     """
-    gpu_filters = []
-    
-    # Check if we need CPU processing (reg_v already computed)
-    needs_cpu_filters = bool(reg_v) or debug_overlay
-    
-    if needs_cpu_filters:
-        # OPTION 1: HYBRID PIPELINE
-        # 1. Download to CPU immediately after decode
+
+    gpu_filters: list[str] = []
+
+    needs_cpu = requires_cpu_filters(reg_v, debug_overlay)
+
+    # ─────────────────────────────────────────────
+    # HYBRID PIPELINE (GPU → CPU → GPU)
+    # ─────────────────────────────────────────────
+    if needs_cpu:
+        # 1. Download CUDA frames → system memory
         gpu_filters.append("hwdownload")
-        gpu_filters.append("format=nv12") # Native format from NVDEC
-        
-        # 2. Scaling on CPU (if needed)
+        gpu_filters.append("format=nv12")
+
+        # 2. CPU scaling (ONLY here)
         if out_w != orig_w or out_h != orig_h:
-            gpu_filters.append(f"scale={out_w}:{out_h}:flags=lanczos")
-        
-        # 3. Add software filters (effects)
-        if reg_v:
-            gpu_filters.extend(reg_v)
-        
-        # 4. Debug overlay
+            gpu_filters.append(
+                f"scale={out_w}:{out_h}:flags=lanczos"
+            )
+
+        # 3. CPU-only effects
+        for f in reg_v:
+            gpu_filters.append(f)
+
+        # 4. Debug overlay (CPU)
         if debug_overlay:
             text = escape_filter_text(f"[{seg_idx}]")
             gpu_filters.append(
-                f"drawtext=text='{text}':fontcolor=yellow:fontsize=20:"
-                f"box=1:boxcolor=black@0.7:x=10:y=10"
+                "drawtext="
+                f"text='{text}':"
+                "fontcolor=yellow:"
+                "fontsize=20:"
+                "box=1:"
+                "boxcolor=black@0.7:"
+                "x=10:y=10"
             )
-        
-        # 5. Final format and SAR
+
+        # 5. Normalize
         gpu_filters.append("setsar=1")
         gpu_filters.append("format=yuv420p")
-        
-        # 6. Upload back to GPU for encoding
+
+        # 6. Upload back to GPU for NVENC
         gpu_filters.append("hwupload_cuda")
-    else:
-        # OPTION 2: PURE GPU PATH
-        # Stay on GPU for maximum speed
-        
-        # Determine scaling filter
-        scale_filter = "scale_cuda" if USE_SCALE_CUDA else "scale_npp"
-        
-        if out_w != orig_w or out_h != orig_h:
-            gpu_filters.append(f"{scale_filter}={out_w}:{out_h}:interp_algo={GPU_SCALE_ALGO}")
-        
-        # For Pure GPU path, we try to avoid hwdownload/hwupload.
-        # However, we still need to ensure the format is compatible with NVENC.
-        # scale_cuda output is cuda, which NVENC accepts.
-        # We'll add a simple format check if needed, but usually it's not.
-        
-        # If we need setsar=1, we MUST download. Let's check if we can skip it.
-        # For now, let's follow the user's "Pure GPU" definition strictly.
-        pass
-    
+
+        return gpu_filters
+
+    # ─────────────────────────────────────────────
+    # PURE GPU PIPELINE (NO CPU FILTERS)
+    # ─────────────────────────────────────────────
+    scale_filter = "scale_cuda" if USE_SCALE_CUDA else "scale_npp"
+
+    if out_w != orig_w or out_h != orig_h:
+        gpu_filters.append(
+            f"{scale_filter}={out_w}:{out_h}:interp_algo={GPU_SCALE_ALGO}"
+        )
+
+    # NOTE:
+    # - No setsar
+    # - No format
+    # - No drawtext
+    # - No reg_v allowed here by design
+
     return gpu_filters
+
+
+def requires_cpu_filters(video_filters: list[str], debug_overlay: bool) -> bool:
+    """
+    Determine if ANY filter requires CPU frames.
+    This prevents illegal CUDA → CPU auto-conversions.
+    """
+    CPU_FILTER_KEYWORDS = (
+        "drawtext",
+        "crop=",
+        "scale=",
+        "subtitles",
+        "setpts",
+        "setsar",
+        "format=",
+        "eq",
+        "curves",
+        "color",
+        "hue",
+        "lut",
+    )
+
+    if debug_overlay:
+        return True
+
+    for f in video_filters:
+        for kw in CPU_FILTER_KEYWORDS:
+            if kw in f:
+                return True
+
+    return False
 
 
 def _render_cpu_fallback(args, temp_out):
