@@ -12,7 +12,7 @@ GPU_ENCODER = "h264_nvenc"  # NVIDIA hardware encoder
 GPU_PRESET = "p7"  # p1-p7, p7 is highest quality
 GPU_TUNE = "hq"  # High quality mode
 GPU_RC_MODE = "vbr"  # Variable bitrate for better quality
-CQ_QUALITY = 19  # Constant quality (lower = better, 18-23 recommended)
+CQ_QUALITY = 23  # Standard high quality (18-23 recommended, 23 is safer for disk)
 
 # GPU decoder settings
 GPU_DECODER = "h264_cuvid"  # NVIDIA hardware decoder
@@ -25,10 +25,10 @@ GPU_SCALE_ALGO = "lanczos"  # Scaling algorithm (lanczos, bicubic, bilinear)
 # Advanced NVENC settings
 NVENC_SPATIAL_AQ = True  # Spatial adaptive quantization
 NVENC_TEMPORAL_AQ = True  # Temporal adaptive quantization
-NVENC_RC_LOOKAHEAD = 32  # Frames to look ahead (0-32)
-NVENC_SURFACES = 64  # Encoding surfaces (more = better quality but more VRAM)
-NVENC_MAXRATE = "20M"  # Maximum bitrate
-NVENC_BUFSIZE = "40M"  # Buffer size (2x maxrate recommended)
+NVENC_RC_LOOKAHEAD = 24  # Reduced for stability
+NVENC_SURFACES = 32  # Reduced to save VRAM and avoid initialization errors
+NVENC_MAXRATE = "10M"  # Reduced from 20M to save disk space
+NVENC_BUFSIZE = "20M"  # 2x maxrate
 
 # Decoder settings
 DECODER_THREADS = 2  # Keep it low for stability
@@ -158,7 +158,7 @@ QUALITY_PRESETS = {
 }
 
 # Active preset
-ACTIVE_PRESET = "high"  # Change this to switch presets
+ACTIVE_PRESET = "balanced"  # Balanced is safer for disk space
 
 def get_active_preset():
     """Get the active quality preset settings."""

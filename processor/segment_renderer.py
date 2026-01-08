@@ -159,6 +159,11 @@ def render_segment_smart(args: tuple) -> str:
     print(f"DEBUG: {' '.join(cmd)}")
     
     run_ffmpeg(cmd, timeout=MAX_SEGMENT_TIMEOUT)
+    
+    if os.path.exists(temp_out):
+        size_mb = os.path.getsize(temp_out) / (1024 * 1024)
+        print(f"DEBUG: Segment {i} rendered. Size: {size_mb:.2f} MB")
+        
     return temp_out
 
 

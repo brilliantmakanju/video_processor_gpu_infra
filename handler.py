@@ -33,13 +33,36 @@ def handler(job):
             raise ValueError("Invalid job format: missing 'input' field")
 
         v_url, e_url, u_url, p_url, o_res, is_paid = parse_job_input(job['input'])
+        if not o_res:
+            o_res = "original" # Default to original to save space
         print(f"DEBUG: Job Input - Video: {v_url}, Edits: {e_url}, Res: {o_res}, Paid: {is_paid}")
 
         log(f"Downloading files (Target: {o_res}, Paid: {is_paid})...")
-        download_file(v_url, INPUT_VIDEO, 8192, 300) # Increased timeout for large videos
+        download_file(v_url, INPUT_VIDEO, 8192, 300) 
         edit_data = load_edit_data(e_url)
-        print(f"DEBUG: Downloaded video size: {os.path.getsize(INPUT_VIDEO)} bytes")
         
+        # 🔑 SPACE OPTIMIZATION: If file is huge and disk is tight, compress it first
+        import shutil
+        import os
+        from utils.video import compress_video_gpu
+        
+        file_size_gb = os.path.getsize(INPUT_VIDEO) / (1024**3)
+        total, used, free = shutil.disk_usage("/")
+        free_gb = free / (1024**3)
+        
+        # If file > 500MB and free space < 5GB, compress it
+        if file_size_gb > 0.5 and free_gb < 5.0:
+            log(f"⚠️ Low disk space ({free_gb:.1f}GB). Compressing input video to save space...")
+            temp_compressed = INPUT_VIDEO + ".tmp.mp4"
+            compress_video_gpu(INPUT_VIDEO, temp_compressed, target_bitrate="4M")
+            
+            if os.path.exists(temp_compressed):
+                new_size = os.path.getsize(temp_compressed) / (1024**3)
+                log(f"✓ Compressed input from {file_size_gb:.2f}GB to {new_size:.2f}GB")
+                os.replace(temp_compressed, INPUT_VIDEO)
+            else:
+                log("❌ Compression failed, proceeding with original file.")
+
         info = get_video_info(INPUT_VIDEO)
         print(f"DEBUG: Video Info - {info}")
         edits, subtitles = parse_edit_map(edit_data)
@@ -51,11 +74,19 @@ def handler(job):
             raise ValueError("No valid segments to process after parsing edit map")
 
         log(f"Processing {len(segments)} segments at {out_w}x{out_h}...")
+        
+        # Check disk space
+        import shutil
+        total, used, free = shutil.disk_usage("/")
+        log(f"Disk Space: {free // (1024**3)}GB free of {total // (1024**3)}GB")
+        if free < 2 * 1024**3: # Less than 2GB
+            log("⚠️ WARNING: Low disk space! Processing might fail for large videos.")
+
         start_time = time.time()
 
         # Render video (with or without watermark step)
         temp_output = "temp_no_watermark.mp4" if not is_paid and WATERMARK_URL else OUTPUT_VIDEO
-        render_final_video(segments, INPUT_VIDEO, temp_output)
+        render_final_video(segments, INPUT_VIDEO, temp_output, o_res)
         
         # Apply watermark for free users
         if not is_paid and WATERMARK_URL:

@@ -4,13 +4,39 @@ from typing import Dict, Any, Tuple
 from config import FFPROBE_BIN, RESOLUTION_PRESETS
 
 def get_output_resolution(original_width: int, original_height: int, 
-                          requested_res: str = "720p") -> Tuple[int, int]:
-    """Get target output resolution dynamically."""
+                          requested_res: str = "original") -> Tuple[int, int]:
+    """
+    Get target output resolution dynamically.
+    Allows upscaling if requested, but logs a warning.
+    """
     if requested_res == "original" or requested_res not in RESOLUTION_PRESETS:
         return original_width, original_height
     
-    target = RESOLUTION_PRESETS[requested_res]
-    return target if target else (original_width, original_height)
+    target_w, target_h = RESOLUTION_PRESETS[requested_res]
+    
+    if original_width < target_w or original_height < target_h:
+        print(f"DEBUG: Upscaling from {original_width}x{original_height} to {requested_res} ({target_w}x{target_h}).")
+        
+    return target_w, target_h
+
+def compress_video_gpu(input_path: str, output_path: str, target_bitrate: str = "5M"):
+    """
+    Quickly compress a video using GPU to save disk space.
+    Used for pre-processing large input files.
+    """
+    from config import FFMPEG_BIN
+    cmd = [
+        FFMPEG_BIN, "-y",
+        "-hwaccel", "cuda",
+        "-i", input_path,
+        "-c:v", "h264_nvenc",
+        "-b:v", target_bitrate,
+        "-preset", "p4", # Faster preset for pre-processing
+        "-c:a", "copy",   # Keep original audio
+        output_path
+    ]
+    print(f"DEBUG: Compressing input video to save space: {input_path} -> {output_path}")
+    subprocess.run(cmd, capture_output=True, text=True)
 
 def get_video_info(path: str) -> Dict[str, Any]:
     """Get video metadata efficiently with robust error handling."""

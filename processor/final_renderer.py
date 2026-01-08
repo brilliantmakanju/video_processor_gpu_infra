@@ -14,7 +14,7 @@ from utils.gpu import (
     print_gpu_status
 )
 
-def render_final_video(segments: List[Segment], input_path: str, output_path: str):
+def render_final_video(segments: List[Segment], input_path: str, output_path: str, output_res: str = "original"):
     """
     GPU-optimized final video rendering.
     Processes segments sequentially to maximize GPU utilization.
@@ -41,7 +41,7 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
     # Get video info
     info = get_video_info(input_path)
     orig_w, orig_h = info["width"], info["height"]
-    out_w, out_h = get_output_resolution(orig_w, orig_h)
+    out_w, out_h = get_output_resolution(orig_w, orig_h, output_res)
     
     print(f"Input: {orig_w}x{orig_h} @ {info['fps']}fps")
     print(f"Output: {out_w}x{out_h}")
@@ -93,6 +93,15 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
         print(f"\n✓ All segments processed in {processing_time:.1f}s")
         print(f"  Average: {processing_time/len(segments):.1f}s per segment\n")
         
+        # 🔑 SPACE OPTIMIZATION: Delete input video before concatenation
+        # We don't need it anymore as all segments are rendered.
+        if os.path.exists(input_path):
+            try:
+                os.remove(input_path)
+                print(f"✓ Deleted input video to free up space ({os.path.basename(input_path)})")
+            except Exception as e:
+                print(f"⚠️  Failed to delete input video: {e}")
+
         # Concatenate segments
         print("Concatenating segments...")
         concat_start = time.time()
