@@ -37,12 +37,11 @@ def render_segment_smart(args: tuple) -> str:
     temp_out = os.path.join(temp_dir, f"seg_{i:04d}.mp4")
 
     # ─────────────────────────────────────────────
-    # SMART COPY (no filters, no re-encode)
+    # SMART COPY
     # ─────────────────────────────────────────────
     if seg.can_copy and SMART_COPY_MODE:
         cmd = [
-            FFMPEG_BIN,
-            "-y",
+            FFMPEG_BIN, "-y",
             "-ss", str(seg.start),
             "-t", str(seg.duration),
             "-i", input_path,
@@ -68,22 +67,18 @@ def render_segment_smart(args: tuple) -> str:
     # Base FFmpeg command
     # ─────────────────────────────────────────────
     cmd = [
-        FFMPEG_BIN,
-        "-y",
-
-        # Decode directly into CUDA
+        FFMPEG_BIN, "-y",
         "-hwaccel", "cuda",
         "-hwaccel_output_format", "cuda",
         "-hwaccel_device", "0",
         "-extra_hw_frames", "8",
-
         "-ss", str(seg.start),
         "-t", str(seg.duration),
         "-i", input_path,
     ]
 
     # ─────────────────────────────────────────────
-    # Build SAFE filter chain
+    # Build filter chain
     # ─────────────────────────────────────────────
     gpu_filters = _build_gpu_filter_chain(
         seg=seg,
@@ -97,28 +92,25 @@ def render_segment_smart(args: tuple) -> str:
         reg_v=reg_v,
     )
 
+    # 🔑 HYBRID DETECTION
+    is_hybrid = "hwdownload" in gpu_filters
+
     # ─────────────────────────────────────────────
     # Apply filters & mapping
     # ─────────────────────────────────────────────
     if reg_a and has_audio:
-        # Video + Audio filter graph
         v_chain = ",".join(gpu_filters)
         a_chain = ",".join(reg_a)
 
-        filter_complex = (
-            f"[0:v]{v_chain}[v];"
-            f"[0:a]{a_chain}[a]"
-        )
-
         cmd.extend([
-            "-filter_complex", filter_complex,
+            "-filter_complex",
+            f"[0:v]{v_chain}[v];[0:a]{a_chain}[a]",
             "-map", "[v]",
             "-map", "[a]",
             "-c:a", "aac",
             "-b:a", AUDIO_BITRATE,
         ])
     else:
-        # Video-only filters
         cmd.extend([
             "-vf", ",".join(gpu_filters),
             "-map", "0:v:0",
@@ -132,7 +124,7 @@ def render_segment_smart(args: tuple) -> str:
             ])
 
     # ─────────────────────────────────────────────
-    # NVENC encode (CUDA frames guaranteed)
+    # NVENC encode
     # ─────────────────────────────────────────────
     cmd.extend([
         "-c:v", "h264_nvenc",
@@ -145,15 +137,19 @@ def render_segment_smart(args: tuple) -> str:
         "-bufsize", "40M",
         "-profile:v", "high",
         "-level", "4.2",
-        "-pix_fmt", "yuv420p",
         "-spatial_aq", "1",
         "-temporal_aq", "1",
         "-rc-lookahead", "32",
         "-surfaces", "64",
         "-movflags", "+faststart",
         "-fps_mode", "passthrough",
-        temp_out,
     ])
+
+    # ✅ ONLY force pix_fmt when HYBRID
+    if is_hybrid:
+        cmd.extend(["-pix_fmt", "yuv420p"])
+
+    cmd.append(temp_out)
 
     run_ffmpeg(cmd, timeout=MAX_SEGMENT_TIMEOUT)
     return temp_out
