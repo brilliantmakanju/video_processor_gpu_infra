@@ -26,9 +26,15 @@ def build_subtitle_filter(subtitle: Subtitle, segment_start: float,
     # Cache it so we can clean up later
     _ASS_FILE_CACHE[ass_file] = True
     
-    # Return subtitles filter (works without drawtext!)
-    escaped_path = ass_file.replace('\\', '/').replace(':', '\\:').replace("'", "\\'")
-    return f"subtitles='{escaped_path}'"
+    # Escape path for FFmpeg filter - CRITICAL for special characters
+    # Convert backslashes to forward slashes (Windows compatibility)
+    escaped_path = ass_file.replace('\\', '/')
+    # Escape colons, single quotes, and special characters
+    escaped_path = escaped_path.replace(':', r'\:')
+    escaped_path = escaped_path.replace("'", r"'\''")  # Proper single quote escaping
+    
+    # Return subtitles filter with properly escaped path
+    return f"subtitles=filename='{escaped_path}'"
 
 
 def _create_single_subtitle_ass(subtitle: Subtitle, segment_start: float,
@@ -82,8 +88,9 @@ def _create_single_subtitle_ass(subtitle: Subtitle, segment_start: float,
     # Calculate vertical margin for precise positioning
     margin_v = int(((100 - y_pct) / 100) * height) if y_pct > 50 else int((y_pct / 100) * height)
     
-    # Create temporary ASS file
-    fd, ass_path = tempfile.mkstemp(suffix='.ass', text=True)
+    # Create temporary ASS file in /tmp with simple name (no special chars)
+    # Use prefix that's easy to escape
+    fd, ass_path = tempfile.mkstemp(suffix='.ass', prefix='sub_', dir='/tmp', text=True)
     
     with os.fdopen(fd, 'w', encoding='utf-8') as f:
         f.write("[Script Info]\n")
