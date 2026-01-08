@@ -191,14 +191,16 @@ def _build_gpu_filter_chain(
         # ----------------------------
         # 🔑 We OMITTED -hwaccel_output_format cuda in the command,
         # so frames arrive here in system memory (NV12 or similar).
-        # NO hwdownload needed!
-        gpu_filters.append("format=nv12")  # Ensure consistent CPU format
+        gpu_filters.append("format=nv12")
 
-        # CPU scaling if resolution changed
-        if out_w != orig_w or out_h != orig_h:
+        # Check if we already have a scale/zoom in reg_v to avoid double scaling
+        has_manual_scale = any("scale=" in f for f in reg_v)
+
+        # CPU scaling if resolution changed AND no manual scale is present
+        if (out_w != orig_w or out_h != orig_h) and not has_manual_scale:
             gpu_filters.append(f"scale={out_w}:{out_h}:flags=lanczos")
 
-        # Apply CPU-only video effects
+        # Apply CPU-only video effects (Zoom, Subtitles, etc.)
         gpu_filters.extend(reg_v)
 
         # Debug overlay (optional)

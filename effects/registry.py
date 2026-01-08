@@ -2,7 +2,7 @@ from models import Segment
 from typing import List, Optional
 from effects.zoom import build_zoom_filter
 from effects.speed import build_speed_filters
-# from effects.caption import build_subtitle_filter
+from effects.caption import build_subtitle_filter
 # from effects.color import build_improved_color_filter
 
 def get_segment_filters(seg: Segment, width: int, height: int, has_audio: bool) -> tuple[List[str], List[str]]:
@@ -36,7 +36,7 @@ def get_segment_filters(seg: Segment, width: int, height: int, has_audio: bool) 
         
 
     # 3. Subtitles
-    # for subtitle in seg.subtitles:
-    #     v_filters.append(build_subtitle_filter(subtitle, seg.start, width, height))
+    for subtitle in seg.subtitles:
+        v_filters.append(build_subtitle_filter(subtitle, seg.start, width, height))
 
     return v_filters, a_filters
