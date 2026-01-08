@@ -13,11 +13,14 @@ from utils.gpu import (
     monitor_gpu_usage,
     print_gpu_status
 )
+from concurrent.futures import ThreadPoolExecutor
+from effects.watermark import download_watermark, cleanup_watermark
 
-def render_final_video(segments: List[Segment], input_path: str, output_path: str, output_res: str = "original"):
+def render_final_video(segments: List[Segment], input_path: str, output_path: str, 
+                       output_res: str = "original", is_paid: bool = True):
     """
     GPU-optimized final video rendering.
-    Processes segments sequentially to maximize GPU utilization.
+    Processes segments in parallel for maximum throughput.
     """
     temp_dir = "temp_spliceo_v2"
     os.makedirs(temp_dir, exist_ok=True)
@@ -48,10 +51,16 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
     print(f"Segments: {len(segments)}")
     print(f"Total duration: {sum(s.duration for s in segments):.2f}s\n")
     
+    # Download watermark once if needed
+    watermark_path = None
+    if not is_paid and WATERMARK_URL:
+        print("Downloading watermark for integrated rendering...")
+        watermark_path = download_watermark(WATERMARK_URL)
+
     # Prepare render arguments
     render_args = [
         (i, seg, input_path, temp_dir, info["fps"], DEBUG_OVERLAY, info["has_audio"],
-         orig_w, orig_h, out_w, out_h)
+         orig_w, orig_h, out_w, out_h, is_paid, watermark_path)
         for i, seg in enumerate(segments)
     ]
     
@@ -59,35 +68,16 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
     start_time = time.time()
     
     try:
-        # Process segments sequentially for maximum GPU utilization
-        # This prevents VRAM fragmentation and context switching
-        print("Processing segments...")
-        for i, args in enumerate(render_args):
-            seg_start = time.time()
+        # Process segments in parallel
+        print(f"Processing {len(segments)} segments in parallel (Max workers: {MAX_PARALLEL_SEGMENTS})...")
+        
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_SEGMENTS) as executor:
+            # Map the render function to the arguments
+            # We use a wrapper to handle the index and result
+            results = list(executor.map(render_segment_smart, render_args))
             
-            # Monitor GPU before processing
-            if ENABLE_GPU_MONITORING and i == 0:
-                usage = monitor_gpu_usage()
-                if usage:
-                    print(f"Initial GPU usage: {usage['gpu_util']}% "
-                          f"(Encoder: {usage['encoder_util']}%, "
-                          f"Decoder: {usage['decoder_util']}%)")
-            
-            print(f"  [{i+1}/{len(segments)}] Processing segment {i} (Start: {args[1].start:.2f}, Dur: {args[1].duration:.2f})...", end=" ")
-            segment_file = render_segment_smart(args)
-            segment_files.append((i, segment_file))
-            
-            seg_time = time.time() - seg_start
-            print(f"✓ ({seg_time:.1f}s)")
-            
-            # Monitor GPU after processing
-            if ENABLE_GPU_MONITORING and (i + 1) % 5 == 0:
-                usage = monitor_gpu_usage()
-                if usage:
-                    print(f"      GPU: {usage['gpu_util']}% | "
-                          f"Encoder: {usage['encoder_util']}% | "
-                          f"Decoder: {usage['decoder_util']}% | "
-                          f"VRAM: {usage['memory_used_mb']}/{usage['memory_total_mb']} MB")
+            for i, segment_file in enumerate(results):
+                segment_files.append((i, segment_file))
         
         processing_time = time.time() - start_time
         print(f"\n✓ All segments processed in {processing_time:.1f}s")

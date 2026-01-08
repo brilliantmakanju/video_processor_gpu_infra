@@ -51,7 +51,7 @@ def handler(job):
         free_gb = free / (1024**3)
         
         # If file > 500MB and free space < 5GB, compress it
-        if file_size_gb > 0.5 and free_gb < 5.0:
+        if file_size_gb > 0.5 and free_gb < 6.0:
             log(f"⚠️ Low disk space ({free_gb:.1f}GB). Compressing input video to save space...")
             temp_compressed = INPUT_VIDEO + ".tmp.mp4"
             compress_video_gpu(INPUT_VIDEO, temp_compressed, target_bitrate="4M")
@@ -84,21 +84,8 @@ def handler(job):
 
         start_time = time.time()
 
-        # Render video (with or without watermark step)
-        temp_output = "temp_no_watermark.mp4" if not is_paid and WATERMARK_URL else OUTPUT_VIDEO
-        render_final_video(segments, INPUT_VIDEO, temp_output, o_res)
-        
-        # Apply watermark for free users
-        if not is_paid and WATERMARK_URL:
-            log("Applying watermark for free user...")
-            wm_path = download_watermark(WATERMARK_URL)
-            if wm_path and apply_watermark(temp_output, OUTPUT_VIDEO, out_w, out_h, wm_path):
-                log("Watermark applied successfully")
-                if os.path.exists(temp_output): os.remove(temp_output)
-            else:
-                log("Watermark failed or skipped, using unwatermarked video")
-                if os.path.exists(temp_output): os.rename(temp_output, OUTPUT_VIDEO)
-            cleanup_watermark()
+        # Render video (watermark is now integrated into segment rendering)
+        render_final_video(segments, INPUT_VIDEO, OUTPUT_VIDEO, o_res, is_paid)
         
         elapsed = time.time() - start_time
 

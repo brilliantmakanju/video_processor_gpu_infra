@@ -10,6 +10,7 @@ from utils.ffmpeg import run_ffmpeg
 from utils.gpu import check_gpu_support, get_gpu_compute_capability
 from utils.text import escape_filter_text
 from effects.registry import get_segment_filters
+from effects.watermark import build_watermark_filter_integrated, download_watermark
 
 def render_segment_smart(args: tuple) -> str:
     (
@@ -24,6 +25,8 @@ def render_segment_smart(args: tuple) -> str:
         orig_h,
         out_w,
         out_h,
+        is_paid,
+        watermark_path,
     ) = args
 
     temp_out = os.path.join(temp_dir, f"seg_{i:04d}.mp4")
@@ -80,6 +83,15 @@ def render_segment_smart(args: tuple) -> str:
         "-i", input_path,
     ])
 
+    # Add watermark input if needed
+    if not is_paid and watermark_path:
+        # Loop for static images, ignore_loop for GIFs
+        is_gif = watermark_path.lower().endswith(".gif")
+        if is_gif:
+            cmd.extend(["-ignore_loop", "0", "-i", watermark_path])
+        else:
+            cmd.extend(["-loop", "1", "-i", watermark_path])
+
     # ─────────────────────────────────────────────
     # Build filter chain
     # ─────────────────────────────────────────────
@@ -93,6 +105,7 @@ def render_segment_smart(args: tuple) -> str:
         debug_overlay=debug_overlay,
         seg_idx=i,
         reg_v=reg_v,
+        is_paid=is_paid,
     )
 
     is_hybrid = needs_cpu
@@ -100,12 +113,22 @@ def render_segment_smart(args: tuple) -> str:
     v_chain = ",".join(gpu_filters)
 
     # ─────────────────────────────────────────────
-    # ALWAYS use filter_complex (NO -vf)
+    # Build Filter Complex with Watermark support
     # ─────────────────────────────────────────────
+    if not is_paid and watermark_path:
+        wm_filter = build_watermark_filter_integrated(out_w, out_h)
+        if wm_filter:
+            # wm_filter is like "[1:v]scale...[wm];[v_in][wm]overlay...[v]"
+            v_base = f"[0:v]{v_chain}[v_in];"
+            v_final = f"{v_base}{wm_filter}[v]"
+        else:
+            v_final = f"[0:v]{v_chain}[v]"
+    else:
+        v_final = f"[0:v]{v_chain}[v]"
+
     if has_audio and reg_a:
         a_chain = ",".join(reg_a)
-        filter_complex = f"[0:v]{v_chain}[v];[0:a]{a_chain}[a]"
-        print(f"DEBUG: Filter Complex (with audio): {filter_complex}")
+        filter_complex = f"{v_final};[0:a]{a_chain}[a]"
         cmd.extend([
             "-filter_complex", filter_complex,
             "-map", "[v]",
@@ -114,8 +137,7 @@ def render_segment_smart(args: tuple) -> str:
             "-b:a", AUDIO_BITRATE,
         ])
     else:
-        filter_complex = f"[0:v]{v_chain}[v]"
-        print(f"DEBUG: Filter Complex (video only): {filter_complex}")
+        filter_complex = v_final
         cmd.extend([
             "-filter_complex", filter_complex,
             "-map", "[v]",
@@ -177,6 +199,7 @@ def _build_gpu_filter_chain(
     debug_overlay,
     seg_idx,
     reg_v,
+    is_paid,
 ):
     """
     Safe GPU ↔ CPU filter chain for rendering segments.
@@ -222,6 +245,17 @@ def _build_gpu_filter_chain(
 
         # Upload back to GPU for NVENC
         gpu_filters.append("hwupload_cuda")
+        
+        # Apply watermark if needed (integrated into CPU path for simplicity)
+        if not is_paid:
+            wm_filter = build_watermark_filter_integrated(out_w, out_h)
+            if wm_filter:
+                # Replace [v_in] with the current stream and [1:v] is the watermark
+                # We need to be careful with labels here. 
+                # Since this is a simple chain, we can just append it.
+                # However, build_watermark_filter_integrated returns a complex filter string.
+                # For a simple -vf or a single chain in filter_complex, we can adapt it.
+                pass # We'll handle this in the filter_complex construction
         
         print(f"DEBUG: Hybrid Filter Chain for segment {seg_idx}: {gpu_filters}")
         return gpu_filters

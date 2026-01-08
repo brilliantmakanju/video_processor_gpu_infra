@@ -9,10 +9,10 @@ ENABLE_GPU = True
 
 # GPU encoding settings
 GPU_ENCODER = "h264_nvenc"  # NVIDIA hardware encoder
-GPU_PRESET = "p7"  # p1-p7, p7 is highest quality
+GPU_PRESET = "p4"  # p1-p7, p4 is a good balance of speed and quality
 GPU_TUNE = "hq"  # High quality mode
 GPU_RC_MODE = "vbr"  # Variable bitrate for better quality
-CQ_QUALITY = 23  # Standard high quality (18-23 recommended, 23 is safer for disk)
+CQ_QUALITY = 24  # Slightly higher CQ for smaller files (23-28 recommended)
 
 # GPU decoder settings
 GPU_DECODER = "h264_cuvid"  # NVIDIA hardware decoder
@@ -27,8 +27,8 @@ NVENC_SPATIAL_AQ = True  # Spatial adaptive quantization
 NVENC_TEMPORAL_AQ = True  # Temporal adaptive quantization
 NVENC_RC_LOOKAHEAD = 24  # Reduced for stability
 NVENC_SURFACES = 32  # Reduced to save VRAM and avoid initialization errors
-NVENC_MAXRATE = "10M"  # Reduced from 20M to save disk space
-NVENC_BUFSIZE = "20M"  # 2x maxrate
+NVENC_MAXRATE = "6M"  # Reduced to save disk space and speed up encoding
+NVENC_BUFSIZE = "12M"  # 2x maxrate
 
 # Decoder settings
 DECODER_THREADS = 2  # Keep it low for stability
@@ -50,8 +50,9 @@ EDITMAP_JSON = os.environ.get("EDITMAP_JSON", "editmap.json")
 SMART_COPY_MODE = True
 
 # Maximum workers for parallel processing
-# For GPU processing, limit to 1-2 to avoid VRAM conflicts
-MAX_WORKERS = 1  # Single worker for GPU to maximize utilization
+# For GPU processing, limit to 2 to avoid VRAM conflicts but gain speed
+MAX_WORKERS = 2  
+MAX_PARALLEL_SEGMENTS = 2
 
 # Timeout settings
 MAX_SEGMENT_TIMEOUT = 600  # 10 minutes per segment
@@ -87,10 +88,10 @@ DEBUG_OVERLAY = False
 # ═══════════════════════════════════════════════════════════════
 
 WATERMARK_URL = os.environ.get("WATERMARK_URL", "")
-WATERMARK_PADDING = 2
+WATERMARK_PADDING = 0.8
 WATERMARK_SCALE = 0.12  # 15% of video width
 WATERMARK_OPACITY = 0.8
-WATERMARK_POSITION = "bottom_right"  # top_left, top_right, bottom_left, bottom_right
+WATERMARK_POSITION = "bottom_left"  # top_left, top_right, bottom_left, bottom_right
 
 # ═══════════════════════════════════════════════════════════════
 # MEMORY OPTIMIZATION

@@ -31,7 +31,8 @@ def compress_video_gpu(input_path: str, output_path: str, target_bitrate: str = 
         "-i", input_path,
         "-c:v", "h264_nvenc",
         "-b:v", target_bitrate,
-        "-preset", "p4", # Faster preset for pre-processing
+        "-preset", "p1", # Fastest possible preset for pre-processing
+        "-tune", "ll",   # Low latency
         "-c:a", "copy",   # Keep original audio
         output_path
     ]
