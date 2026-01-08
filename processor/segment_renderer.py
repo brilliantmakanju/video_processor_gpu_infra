@@ -11,15 +11,6 @@ from utils.text import escape_filter_text
 from effects.registry import get_segment_filters
 
 def render_segment_smart(args: tuple) -> str:
-    """
-    Deterministic, GPU-accelerated segment renderer.
-
-    Guarantees:
-    - CUDA frames NEVER touch CPU filters
-    - CPU filters ALWAYS receive system-memory frames
-    - NVENC ALWAYS receives CUDA frames
-    """
-
     (
         i,
         seg,
@@ -92,30 +83,29 @@ def render_segment_smart(args: tuple) -> str:
         reg_v=reg_v,
     )
 
-    # 🔑 HYBRID DETECTION
     is_hybrid = "hwdownload" in gpu_filters
 
-    # ─────────────────────────────────────────────
-    # Apply filters & mapping
-    # ─────────────────────────────────────────────
-    if reg_a and has_audio:
-        v_chain = ",".join(gpu_filters)
-        a_chain = ",".join(reg_a)
+    v_chain = ",".join(gpu_filters)
 
+    # ─────────────────────────────────────────────
+    # ALWAYS use filter_complex (NO -vf)
+    # ─────────────────────────────────────────────
+    if has_audio and reg_a:
+        a_chain = ",".join(reg_a)
+        filter_complex = f"[0:v]{v_chain}[v];[0:a]{a_chain}[a]"
         cmd.extend([
-            "-filter_complex",
-            f"[0:v]{v_chain}[v];[0:a]{a_chain}[a]",
+            "-filter_complex", filter_complex,
             "-map", "[v]",
             "-map", "[a]",
             "-c:a", "aac",
             "-b:a", AUDIO_BITRATE,
         ])
     else:
+        filter_complex = f"[0:v]{v_chain}[v]"
         cmd.extend([
-            "-vf", ",".join(gpu_filters),
-            "-map", "0:v:0",
+            "-filter_complex", filter_complex,
+            "-map", "[v]",
         ])
-
         if has_audio:
             cmd.extend([
                 "-map", "0:a:0",
@@ -145,7 +135,7 @@ def render_segment_smart(args: tuple) -> str:
         "-fps_mode", "passthrough",
     ])
 
-    # ✅ ONLY force pix_fmt when HYBRID
+    # Only force pix_fmt if we touched CPU
     if is_hybrid:
         cmd.extend(["-pix_fmt", "yuv420p"])
 
