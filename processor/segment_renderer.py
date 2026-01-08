@@ -89,9 +89,8 @@ def render_segment_smart(args: Tuple) -> str:
 
 def _build_gpu_filter_chain(seg, out_w, out_h, orig_w, orig_h, has_audio, 
                             debug_overlay, seg_idx):
-    """Build optimized GPU filter chain."""
+    """Build optimized GPU filter chain - stay on GPU when possible."""
     gpu_filters = []
-    needs_cpu_filters = False
     
     # Get effect filters
     reg_v, _ = get_segment_filters(seg, out_w, out_h, has_audio)
@@ -99,15 +98,14 @@ def _build_gpu_filter_chain(seg, out_w, out_h, orig_w, orig_h, has_audio,
     # Check if we need CPU processing
     needs_cpu_filters = bool(reg_v) or debug_overlay
     
-    # Scaling with GPU (scale_cuda is much faster than scale_npp)
-    if out_w != orig_w or out_h != orig_h:
-        # Use scale_cuda for better performance
-        gpu_filters.append(f"scale_cuda={out_w}:{out_h}:interp_algo=lanczos")
-    
-    # If we have software filters, we need to download from GPU
     if needs_cpu_filters:
+        # Must go to CPU for effects/debug overlay
         gpu_filters.append("hwdownload")
-        gpu_filters.append("format=nv12")
+        gpu_filters.append("format=yuv420p")
+        
+        # Scaling on CPU
+        if out_w != orig_w or out_h != orig_h:
+            gpu_filters.append(f"scale={out_w}:{out_h}:flags=lanczos")
         
         # Add software filters
         if reg_v:
@@ -121,12 +119,19 @@ def _build_gpu_filter_chain(seg, out_w, out_h, orig_w, orig_h, has_audio,
                 f"box=1:boxcolor=black@0.7:x=10:y=10"
             )
         
-        # Upload back to GPU
+        gpu_filters.append("setsar=1")
+        
+        # Upload back to GPU for encoding
         gpu_filters.append("hwupload_cuda")
-    
-    # Final pixel format and SAR
-    gpu_filters.append("scale_cuda=format=yuv420p")
-    gpu_filters.append("setsar=1")
+    else:
+        # PURE GPU PATH - no CPU roundtrip!
+        # Scale with format conversion on GPU
+        if out_w != orig_w or out_h != orig_h:
+            gpu_filters.append(f"scale_cuda={out_w}:{out_h}:interp_algo=lanczos:format=yuv420p")
+        else:
+            gpu_filters.append("scale_cuda=format=yuv420p")
+        
+        # SAR is handled by encoder or not needed - skip setsar to stay on GPU
     
     return gpu_filters
 
