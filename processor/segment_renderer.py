@@ -138,6 +138,10 @@ def render_segment_smart(args: tuple) -> str:
     # Only force pix_fmt if we touched CPU
     if is_hybrid:
         cmd.extend(["-pix_fmt", "yuv420p"])
+    else:
+        # Pure GPU path: ensure we output something NVENC likes if it's not already cuda
+        # But since we use -hwaccel_output_format cuda, it's already cuda.
+        pass
 
     cmd.append(temp_out)
 
@@ -194,14 +198,18 @@ def _build_gpu_filter_chain(
         return gpu_filters
 
     # Pure GPU pipeline
-    # 🔑 Upload input to CUDA first to avoid auto-scale errors
-    gpu_filters.append("hwupload_cuda")
+    # 🔑 We already have -hwaccel_output_format cuda, so frames are already in CUDA.
+    # Adding hwupload_cuda here causes "Impossible to convert" errors.
+    # We use 'format=cuda' as a no-op to ensure the chain is never empty.
+    gpu_filters.append("format=cuda")
 
     scale_filter = "scale_cuda" if USE_SCALE_CUDA else "scale_npp"
     if out_w != orig_w or out_h != orig_h:
         gpu_filters.append(f"{scale_filter}={out_w}:{out_h}:interp_algo={GPU_SCALE_ALGO}")
 
-    # No CPU filters allowed here
+    # Add any other GPU-compatible filters
+    gpu_filters.extend(reg_v)
+
     return gpu_filters
 
 
