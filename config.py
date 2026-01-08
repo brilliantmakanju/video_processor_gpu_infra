@@ -30,6 +30,9 @@ NVENC_SURFACES = 64  # Encoding surfaces (more = better quality but more VRAM)
 NVENC_MAXRATE = "20M"  # Maximum bitrate
 NVENC_BUFSIZE = "40M"  # Buffer size (2x maxrate recommended)
 
+# Decoder settings
+DECODER_THREADS = 4  # Limit decoder threads to avoid "too many surfaces" error
+
 # ═══════════════════════════════════════════════════════════════
 # PROCESSING CONFIGURATION
 # ═══════════════════════════════════════════════════════════════

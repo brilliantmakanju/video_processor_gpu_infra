@@ -1,7 +1,8 @@
 import os
 from config import (
     FFMPEG_BIN, SMART_COPY_MODE, AUDIO_BITRATE, CQ_QUALITY, 
-    MAX_SEGMENT_TIMEOUT, USE_SCALE_CUDA, GPU_SCALE_ALGO
+    MAX_SEGMENT_TIMEOUT, USE_SCALE_CUDA, GPU_SCALE_ALGO,
+    DECODER_THREADS
 )
 from typing import Tuple
 from models import Segment
@@ -50,9 +51,10 @@ def render_segment_smart(args: tuple) -> str:
         return _render_cpu_fallback(args, temp_out)
 
     # ─────────────────────────────────────────────
-    # Collect filters
+    # Collect filters and determine pipeline type
     # ─────────────────────────────────────────────
     reg_v, reg_a = get_segment_filters(seg, out_w, out_h, has_audio)
+    needs_cpu = requires_cpu_filters(reg_v, debug_overlay)
 
     # ─────────────────────────────────────────────
     # Base FFmpeg command
@@ -60,13 +62,21 @@ def render_segment_smart(args: tuple) -> str:
     cmd = [
         FFMPEG_BIN, "-y",
         "-hwaccel", "cuda",
-        "-hwaccel_output_format", "cuda",
+    ]
+
+    # 🔑 KEY FIX: Only use -hwaccel_output_format cuda for pure GPU paths.
+    # For hybrid paths, omitting it lets FFmpeg download frames to RAM automatically.
+    if not needs_cpu:
+        cmd.extend(["-hwaccel_output_format", "cuda"])
+
+    cmd.extend([
         "-hwaccel_device", "0",
         "-extra_hw_frames", "8",
+        "-threads", str(DECODER_THREADS), # Limit threads to avoid "too many surfaces"
         "-ss", str(seg.start),
         "-t", str(seg.duration),
         "-i", input_path,
-    ]
+    ])
 
     # ─────────────────────────────────────────────
     # Build filter chain
@@ -83,7 +93,7 @@ def render_segment_smart(args: tuple) -> str:
         reg_v=reg_v,
     )
 
-    is_hybrid = "hwdownload" in gpu_filters
+    is_hybrid = needs_cpu
 
     v_chain = ",".join(gpu_filters)
 
@@ -177,13 +187,14 @@ def _build_gpu_filter_chain(
     gpu_filters: list[str] = []
     needs_cpu = requires_cpu_filters(reg_v, debug_overlay)
 
-    # ----------------------------
-    # HYBRID: GPU → CPU → GPU
-    # ----------------------------
     if needs_cpu:
-        # Download frames to CPU
-        gpu_filters.append("hwdownload")  # CUDA → CPU
-        gpu_filters.append("format=nv12")  # CPU filters need standard format
+        # ----------------------------
+        # HYBRID: GPU → CPU → GPU
+        # ----------------------------
+        # 🔑 We OMITTED -hwaccel_output_format cuda in the command,
+        # so frames arrive here in system memory (NV12 or similar).
+        # NO hwdownload needed!
+        gpu_filters.append("format=nv12")  # Ensure consistent CPU format
 
         # CPU scaling if resolution changed
         if out_w != orig_w or out_h != orig_h:
@@ -206,6 +217,8 @@ def _build_gpu_filter_chain(
 
         # Upload back to GPU for NVENC
         gpu_filters.append("hwupload_cuda")
+        
+        print(f"DEBUG: Hybrid Filter Chain for segment {seg_idx}: {gpu_filters}")
         return gpu_filters
 
     # ----------------------------
