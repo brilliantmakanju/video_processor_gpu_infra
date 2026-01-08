@@ -83,7 +83,7 @@ def _create_single_subtitle_ass(subtitle: Subtitle, segment_start: float,
     margin_v = int(((100 - y_pct) / 100) * height) if y_pct > 50 else int((y_pct / 100) * height)
     
     # Create temporary ASS file
-    fd, ass_path = tempfile.mkstemp(suffix='.ass', text=True, delete=False)
+    fd, ass_path = tempfile.mkstemp(suffix='.ass', text=True)
     
     with os.fdopen(fd, 'w', encoding='utf-8') as f:
         f.write("[Script Info]\n")
