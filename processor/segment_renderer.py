@@ -140,11 +140,10 @@ def render_segment_smart(args: tuple) -> str:
         "-maxrate", "20M",
         "-bufsize", "40M",
         "-profile:v", "high",
-        "-level", "4.2",
         "-spatial_aq", "1",
         "-temporal_aq", "1",
         "-rc-lookahead", "32",
-        "-surfaces", "64",
+        "-surfaces", "32", # Reduced from 64 for stability
         "-movflags", "+faststart",
         "-fps_mode", "passthrough",
     ])
