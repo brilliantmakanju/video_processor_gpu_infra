@@ -10,7 +10,7 @@ from storage.gofile import upload_to_gofile
 from storage.downloader import download_file
 from processor.analyzer import parse_edit_map
 from processor.timeline import create_segments
-from effects.caption import cleanup_subtitle_files
+# from effects.caption import cleanup_subtitle_files
 from processor.final_renderer import render_final_video
 from utils.video import get_video_info, get_output_resolution
 from processor.job_parser import parse_job_input, load_edit_data
@@ -97,7 +97,7 @@ def handler(job):
             if os.path.exists(f): 
                 try: os.remove(f)
                 except: pass
-        cleanup_subtitle_files() 
+        # cleanup_subtitle_files() 
         cleanup_watermark()
 
 runpod.serverless.start({"handler": handler})

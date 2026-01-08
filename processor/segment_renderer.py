@@ -157,74 +157,51 @@ def _build_gpu_filter_chain(
     reg_v,
 ):
     """
-    Build a SAFE filter chain with explicit GPU ↔ CPU boundaries.
-
+    Safe GPU ↔ CPU filter chain.
     Rules:
-    - CUDA frames may ONLY touch GPU filters
-    - First CPU filter MUST be preceded by hwdownload
-    - Once on CPU, we stay on CPU until hwupload_cuda
+    - GPU filters only receive CUDA frames
+    - CPU filters only receive system memory frames
     """
 
     gpu_filters: list[str] = []
-
     needs_cpu = requires_cpu_filters(reg_v, debug_overlay)
 
-    # ─────────────────────────────────────────────
-    # HYBRID PIPELINE (GPU → CPU → GPU)
-    # ─────────────────────────────────────────────
     if needs_cpu:
-        # 1. Download CUDA frames → system memory
-        gpu_filters.append("hwdownload")
+        # Hybrid: GPU → CPU → GPU
+        gpu_filters.append("hwdownload")  # CUDA → CPU
         gpu_filters.append("format=nv12")
 
-        # 2. CPU scaling (ONLY here)
+        # CPU scaling (if resolution change)
         if out_w != orig_w or out_h != orig_h:
-            gpu_filters.append(
-                f"scale={out_w}:{out_h}:flags=lanczos"
-            )
+            gpu_filters.append(f"scale={out_w}:{out_h}:flags=lanczos")
 
-        # 3. CPU-only effects
-        for f in reg_v:
-            gpu_filters.append(f)
+        # CPU-only effects
+        gpu_filters.extend(reg_v)
 
-        # 4. Debug overlay (CPU)
+        # Debug overlay
         if debug_overlay:
             text = escape_filter_text(f"[{seg_idx}]")
             gpu_filters.append(
-                "drawtext="
-                f"text='{text}':"
-                "fontcolor=yellow:"
-                "fontsize=20:"
-                "box=1:"
-                "boxcolor=black@0.7:"
-                "x=10:y=10"
+                f"drawtext=text='{text}':fontcolor=yellow:fontsize=20:"
+                "box=1:boxcolor=black@0.7:x=10:y=10"
             )
 
-        # 5. Normalize
         gpu_filters.append("setsar=1")
         gpu_filters.append("format=yuv420p")
 
-        # 6. Upload back to GPU for NVENC
+        # Upload back to GPU for NVENC
         gpu_filters.append("hwupload_cuda")
-
         return gpu_filters
 
-    # ─────────────────────────────────────────────
-    # PURE GPU PIPELINE (NO CPU FILTERS)
-    # ─────────────────────────────────────────────
+    # Pure GPU pipeline
+    # 🔑 Upload input to CUDA first to avoid auto-scale errors
+    gpu_filters.append("hwupload_cuda")
+
     scale_filter = "scale_cuda" if USE_SCALE_CUDA else "scale_npp"
-
     if out_w != orig_w or out_h != orig_h:
-        gpu_filters.append(
-            f"{scale_filter}={out_w}:{out_h}:interp_algo={GPU_SCALE_ALGO}"
-        )
+        gpu_filters.append(f"{scale_filter}={out_w}:{out_h}:interp_algo={GPU_SCALE_ALGO}")
 
-    # NOTE:
-    # - No setsar
-    # - No format
-    # - No drawtext
-    # - No reg_v allowed here by design
-
+    # No CPU filters allowed here
     return gpu_filters
 
 
