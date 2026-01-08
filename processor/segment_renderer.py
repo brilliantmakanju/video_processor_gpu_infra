@@ -161,28 +161,33 @@ def _build_gpu_filter_chain(
     reg_v,
 ):
     """
-    Safe GPU ↔ CPU filter chain.
+    Safe GPU ↔ CPU filter chain for rendering segments.
+
     Rules:
     - GPU filters only receive CUDA frames
     - CPU filters only receive system memory frames
+    - Handles scaling, effects, and debug overlay safely
     """
 
     gpu_filters: list[str] = []
     needs_cpu = requires_cpu_filters(reg_v, debug_overlay)
 
+    # ----------------------------
+    # HYBRID: GPU → CPU → GPU
+    # ----------------------------
     if needs_cpu:
-        # Hybrid: GPU → CPU → GPU
+        # Download frames to CPU
         gpu_filters.append("hwdownload")  # CUDA → CPU
-        gpu_filters.append("format=nv12")
+        gpu_filters.append("format=nv12")  # CPU filters need standard format
 
-        # CPU scaling (if resolution change)
+        # CPU scaling if resolution changed
         if out_w != orig_w or out_h != orig_h:
             gpu_filters.append(f"scale={out_w}:{out_h}:flags=lanczos")
 
-        # CPU-only effects
+        # Apply CPU-only video effects
         gpu_filters.extend(reg_v)
 
-        # Debug overlay
+        # Debug overlay (optional)
         if debug_overlay:
             text = escape_filter_text(f"[{seg_idx}]")
             gpu_filters.append(
@@ -190,6 +195,7 @@ def _build_gpu_filter_chain(
                 "box=1:boxcolor=black@0.7:x=10:y=10"
             )
 
+        # Final CPU formatting before sending back to GPU
         gpu_filters.append("setsar=1")
         gpu_filters.append("format=yuv420p")
 
@@ -197,18 +203,27 @@ def _build_gpu_filter_chain(
         gpu_filters.append("hwupload_cuda")
         return gpu_filters
 
-    # Pure GPU pipeline
-    # 🔑 We already have -hwaccel_output_format cuda, so frames are already in CUDA.
-    # Adding hwupload_cuda here causes "Impossible to convert" errors.
-    # We use 'format=cuda' as a no-op to ensure the chain is never empty.
-    gpu_filters.append("format=cuda")
+    # ----------------------------
+    # PURE GPU: everything stays on GPU
+    # ----------------------------
+    # Force a CUDA-compatible input format first
+    gpu_filters.append("format=nv12")       # Safe for scale_cuda / scale_npp
+    gpu_filters.append("hwupload_cuda")     # Upload to GPU
 
-    scale_filter = "scale_cuda" if USE_SCALE_CUDA else "scale_npp"
+    # GPU scaling if resolution changed
     if out_w != orig_w or out_h != orig_h:
+        scale_filter = "scale_cuda" if USE_SCALE_CUDA else "scale_npp"
         gpu_filters.append(f"{scale_filter}={out_w}:{out_h}:interp_algo={GPU_SCALE_ALGO}")
 
-    # Add any other GPU-compatible filters
+    # Apply pure GPU filters (must be GPU compatible)
     gpu_filters.extend(reg_v)
+
+    # Debug overlay not allowed here (would need CPU)
+    if debug_overlay:
+        print(f"⚠️  Warning: debug overlay requires CPU, skipping for segment {seg_idx}")
+
+    # Ensure SAR is set for NVENC
+    gpu_filters.append("setsar=1")
 
     return gpu_filters
 
