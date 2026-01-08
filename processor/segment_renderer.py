@@ -93,6 +93,7 @@ def render_segment_smart(args: tuple) -> str:
     if has_audio and reg_a:
         a_chain = ",".join(reg_a)
         filter_complex = f"[0:v]{v_chain}[v];[0:a]{a_chain}[a]"
+        print(f"DEBUG: Filter Complex (with audio): {filter_complex}")
         cmd.extend([
             "-filter_complex", filter_complex,
             "-map", "[v]",
@@ -102,6 +103,7 @@ def render_segment_smart(args: tuple) -> str:
         ])
     else:
         filter_complex = f"[0:v]{v_chain}[v]"
+        print(f"DEBUG: Filter Complex (video only): {filter_complex}")
         cmd.extend([
             "-filter_complex", filter_complex,
             "-map", "[v]",
@@ -145,6 +147,9 @@ def render_segment_smart(args: tuple) -> str:
 
     cmd.append(temp_out)
 
+    print(f"DEBUG: Running FFmpeg command for segment {i}:")
+    print(f"DEBUG: {' '.join(cmd)}")
+    
     run_ffmpeg(cmd, timeout=MAX_SEGMENT_TIMEOUT)
     return temp_out
 
@@ -206,9 +211,9 @@ def _build_gpu_filter_chain(
     # ----------------------------
     # PURE GPU: everything stays on GPU
     # ----------------------------
-    # Force a CUDA-compatible input format first
-    gpu_filters.append("format=nv12")       # Safe for scale_cuda / scale_npp
-    gpu_filters.append("hwupload_cuda")     # Upload to GPU
+    # 🔑 Frames are already in CUDA due to -hwaccel_output_format cuda
+    # Adding hwupload_cuda here causes "Impossible to convert" errors.
+    gpu_filters.append("format=cuda")
 
     # GPU scaling if resolution changed
     if out_w != orig_w or out_h != orig_h:
@@ -225,6 +230,7 @@ def _build_gpu_filter_chain(
     # Ensure SAR is set for NVENC
     gpu_filters.append("setsar=1")
 
+    print(f"DEBUG: GPU Filter Chain for segment {seg_idx}: {gpu_filters}")
     return gpu_filters
 
 
@@ -233,14 +239,10 @@ def requires_cpu_filters(video_filters: list[str], debug_overlay: bool) -> bool:
     Determine if ANY filter requires CPU frames.
     This prevents illegal CUDA → CPU auto-conversions.
     """
-    CPU_FILTER_KEYWORDS = (
+    # Filters that are definitely CPU-only
+    CPU_ONLY_FILTERS = (
         "drawtext",
-        "crop=",
-        "scale=",
         "subtitles",
-        "setpts",
-        "setsar",
-        "format=",
         "eq",
         "curves",
         "color",
@@ -252,9 +254,23 @@ def requires_cpu_filters(video_filters: list[str], debug_overlay: bool) -> bool:
         return True
 
     for f in video_filters:
-        for kw in CPU_FILTER_KEYWORDS:
+        # Check for CPU-only filters
+        for kw in CPU_ONLY_FILTERS:
             if kw in f:
                 return True
+        
+        # Check for software scale/crop/format (avoiding _cuda and _npp)
+        if "scale=" in f and "_cuda" not in f and "_npp" not in f:
+            return True
+        if "crop=" in f and "_cuda" not in f and "_npp" not in f:
+            return True
+        if "format=" in f and "format=cuda" not in f and "format=nv12" not in f:
+            # Note: format=nv12 is used in hybrid path, but here we check if it's in reg_v
+            return True
+        if "setpts" in f: # setpts is usually CPU, though there might be GPU variants
+            return True
+        if "setsar" in f:
+            return True
 
     return False
 

@@ -33,15 +33,19 @@ def handler(job):
             raise ValueError("Invalid job format: missing 'input' field")
 
         v_url, e_url, u_url, p_url, o_res, is_paid = parse_job_input(job['input'])
+        print(f"DEBUG: Job Input - Video: {v_url}, Edits: {e_url}, Res: {o_res}, Paid: {is_paid}")
 
         log(f"Downloading files (Target: {o_res}, Paid: {is_paid})...")
         download_file(v_url, INPUT_VIDEO, 8192, 300) # Increased timeout for large videos
         edit_data = load_edit_data(e_url)
+        print(f"DEBUG: Downloaded video size: {os.path.getsize(INPUT_VIDEO)} bytes")
         
         info = get_video_info(INPUT_VIDEO)
+        print(f"DEBUG: Video Info - {info}")
         edits, subtitles = parse_edit_map(edit_data)
         out_w, out_h = get_output_resolution(info["width"], info["height"], o_res)
         segments = create_segments(edits, subtitles, info["duration"], info["width"], info["height"], out_w, out_h)
+        print(f"DEBUG: Created {len(segments)} segments")
         
         if not segments:
             raise ValueError("No valid segments to process after parsing edit map")

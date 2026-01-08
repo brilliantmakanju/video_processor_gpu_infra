@@ -43,4 +43,8 @@ def create_segments(edits: List[Edit], subtitles: List[Subtitle],
         seg.needs_processing, seg.can_copy = analyze_segment_processing(seg, orig_w, orig_h, out_w, out_h)
         segments.append(seg)
         
+    print(f"DEBUG: Generated {len(segments)} segments for processing")
+    for idx, s in enumerate(segments):
+        print(f"  DEBUG: Seg {idx}: {s.start:.2f}-{s.end:.2f} (Proc: {s.needs_processing}, Copy: {s.can_copy})")
+        
     return segments

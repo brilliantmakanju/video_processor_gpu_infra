@@ -73,7 +73,7 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
                           f"(Encoder: {usage['encoder_util']}%, "
                           f"Decoder: {usage['decoder_util']}%)")
             
-            print(f"  [{i+1}/{len(segments)}] Processing segment {i}...", end=" ")
+            print(f"  [{i+1}/{len(segments)}] Processing segment {i} (Start: {args[1].start:.2f}, Dur: {args[1].duration:.2f})...", end=" ")
             segment_file = render_segment_smart(args)
             segment_files.append((i, segment_file))
             
