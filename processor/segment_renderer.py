@@ -26,28 +26,29 @@ def render_segment_smart(args: Tuple) -> str:
     if not use_gpu:
         return _render_cpu_fallback(args, temp_out)
     
+    # Get filters ONCE
+    reg_v, reg_a = get_segment_filters(seg, out_w, out_h, has_audio)
+    
     # Full GPU pipeline
     cmd = [FFMPEG_BIN, "-y"]
     
     # GPU decoding with NVDEC
     cmd.extend([
-        "-vsync", "0",  # Critical for hardware acceleration
+        "-vsync", "0",
         "-hwaccel", "cuda",
-        "-hwaccel_output_format", "cuda",  # Keep frames in GPU memory
-        "-hwaccel_device", "0",  # Use first GPU
-        "-extra_hw_frames", "8",  # Buffer for async processing
+        "-hwaccel_output_format", "cuda",
+        "-hwaccel_device", "0",
+        "-extra_hw_frames", "8",
     ])
     
     cmd.extend(["-ss", str(seg.start), "-t", str(seg.duration), "-i", input_path])
     
     # Build GPU filter chain
     gpu_filters = _build_gpu_filter_chain(
-        seg, out_w, out_h, orig_w, orig_h, has_audio, debug_overlay, i
+        seg, out_w, out_h, orig_w, orig_h, has_audio, debug_overlay, i, reg_v
     )
     
     # Apply filters
-    reg_v, reg_a = get_segment_filters(seg, out_w, out_h, has_audio)
-    
     if reg_a and has_audio:
         # Complex filter with audio
         v_chain = ",".join(gpu_filters)
@@ -61,25 +62,25 @@ def render_segment_smart(args: Tuple) -> str:
         if has_audio:
             cmd.extend(["-c:a", "aac", "-b:a", AUDIO_BITRATE])
     
-    # GPU encoding with NVENC - optimized for RTX 5090
+    # GPU encoding with NVENC
     cmd.extend([
         "-c:v", "h264_nvenc",
-        "-preset", "p7",  # Highest quality preset
-        "-tune", "hq",  # High quality tuning
-        "-rc", "vbr",  # Variable bitrate
-        "-cq", str(CQ_QUALITY),  # Constant quality (lower = better, 19-23 recommended)
-        "-b:v", "0",  # Let encoder decide bitrate
-        "-maxrate", "20M",  # Cap max bitrate
-        "-bufsize", "40M",  # 2x maxrate for VBR
+        "-preset", "p7",
+        "-tune", "hq",
+        "-rc", "vbr",
+        "-cq", str(CQ_QUALITY),
+        "-b:v", "0",
+        "-maxrate", "20M",
+        "-bufsize", "40M",
         "-profile:v", "high",
         "-level", "4.2",
         "-pix_fmt", "yuv420p",
-        "-spatial_aq", "1",  # Spatial adaptive quantization
-        "-temporal_aq", "1",  # Temporal adaptive quantization
-        "-rc-lookahead", "32",  # Look ahead frames for better quality
-        "-surfaces", "64",  # Maximize GPU utilization
+        "-spatial_aq", "1",
+        "-temporal_aq", "1",
+        "-rc-lookahead", "32",
+        "-surfaces", "64",
         "-movflags", "+faststart",
-        "-fps_mode", "passthrough",  # Preserve frame timing
+        "-fps_mode", "passthrough",
         temp_out
     ])
     
@@ -88,14 +89,11 @@ def render_segment_smart(args: Tuple) -> str:
 
 
 def _build_gpu_filter_chain(seg, out_w, out_h, orig_w, orig_h, has_audio, 
-                            debug_overlay, seg_idx):
-    """Build optimized GPU filter chain - stay on GPU when possible."""
+                            debug_overlay, seg_idx, reg_v):
+    """Build optimized GPU filter chain - pass reg_v from outside."""
     gpu_filters = []
     
-    # Get effect filters
-    reg_v, _ = get_segment_filters(seg, out_w, out_h, has_audio)
-    
-    # Check if we need CPU processing
+    # Check if we need CPU processing (reg_v already computed)
     needs_cpu_filters = bool(reg_v) or debug_overlay
     
     if needs_cpu_filters:
@@ -107,31 +105,34 @@ def _build_gpu_filter_chain(seg, out_w, out_h, orig_w, orig_h, has_audio,
         if out_w != orig_w or out_h != orig_h:
             gpu_filters.append(f"scale={out_w}:{out_h}:flags=lanczos")
         
-        # Add software filters
+        # Add software filters (already computed)
         if reg_v:
             gpu_filters.extend(reg_v)
         
         # Debug overlay
-        if debug_overlay:
-            text = escape_filter_text(f"[{seg_idx}]")
-            gpu_filters.append(
-                f"drawtext=text='{text}':fontcolor=yellow:fontsize=20:"
-                f"box=1:boxcolor=black@0.7:x=10:y=10"
-            )
+        # if debug_overlay:
+        #     text = escape_filter_text(f"[{seg_idx}]")
+        #     gpu_filters.append(
+        #         f"drawtext=text='{text}':fontcolor=yellow:fontsize=20:"
+        #         f"box=1:boxcolor=black@0.7:x=10:y=10"
+        #     )
         
         gpu_filters.append("setsar=1")
         
         # Upload back to GPU for encoding
         gpu_filters.append("hwupload_cuda")
     else:
-        # PURE GPU PATH - no CPU roundtrip!
-        # Scale with format conversion on GPU
+        # PURE GPU PATH - use scale_npp for CUDA frames
         if out_w != orig_w or out_h != orig_h:
-            gpu_filters.append(f"scale_cuda={out_w}:{out_h}:interp_algo=lanczos:format=yuv420p")
+            gpu_filters.append(f"scale_npp={out_w}:{out_h}:interp_algo=lanczos:format=yuv420p")
         else:
-            gpu_filters.append("scale_cuda=format=yuv420p")
+            gpu_filters.append("scale_npp=format=yuv420p")
         
-        # SAR is handled by encoder or not needed - skip setsar to stay on GPU
+        # Add setsar for GPU path
+        gpu_filters.append("hwdownload")
+        gpu_filters.append("format=yuv420p")
+        gpu_filters.append("setsar=1")
+        gpu_filters.append("hwupload_cuda")
     
     return gpu_filters
 
