@@ -28,7 +28,7 @@ NVENC_SPATIAL_AQ = True  # Spatial adaptive quantization
 NVENC_TEMPORAL_AQ = True  # Temporal adaptive quantization
 NVENC_RC_LOOKAHEAD = 20  # Reduced to 20 to stay within 32 surface limit on L4
 NVENC_SURFACES = 32  # Reduced to save VRAM and avoid initialization errors
-NVENC_MAXRATE = "5M"  # Reduced to 5M for extra space safety (was 6M)
+NVENC_MAXRATE = "5M"  # Reduced to 5M for space (was 6M)
 NVENC_BUFSIZE = "10M"  # 2x maxrate
 
 # Decoder settings
@@ -168,8 +168,8 @@ ACTIVE_PRESET = "fast"  # Fast is faster but lower quality
 
 def get_dynamic_maxrate(width, height):
     """Calculate a reasonable maxrate based on resolution."""
-    if width >= 1920: return "12M"
-    if width >= 1280: return "6M"
+    if width >= 1920: return "10M" # Reduced from 12M
+    if width >= 1280: return "5M"  # Reduced from 6M
     return "3M"
 
 # ═══════════════════════════════════════════════════════════════

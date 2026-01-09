@@ -130,9 +130,11 @@ def render_segment_smart(args: tuple) -> str:
             wm_filter = build_watermark_filter_integrated(
                 out_w, out_h, input_label="[v_pre_wm]", output_label="[v_cpu]"
             )
-            v_final = f"{v_base}[v_pre_wm];{wm_filter};[v_cpu]hwupload_cuda[v]"
+            # 🔑 KEY FIX: Force nv12 after overlay to ensure stable hwupload_cuda
+            v_final = f"{v_base}[v_pre_wm];{wm_filter};[v_cpu]format=nv12,hwupload_cuda[v]"
         else:
-            v_final = f"{v_base},hwupload_cuda[v]"
+            # 🔑 KEY FIX: Force nv12 before hwupload_cuda
+            v_final = f"{v_base},format=nv12,hwupload_cuda[v]"
     else:
         # PURE GPU PATH: Everything stays on GPU
         if apply_wm:
