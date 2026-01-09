@@ -29,7 +29,9 @@ RUN apt-get update && \
     libnuma-dev \
     libass-dev \
     libfreetype6-dev \
-    libfontconfig1-dev && \
+    libfontconfig1-dev \
+    libharfbuzz-dev \
+    libfribidi-dev && \
     apt-get remove -y ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
@@ -73,6 +75,8 @@ RUN cd /tmp && \
     --enable-openssl \
     --enable-libfreetype \
     --enable-libfontconfig \
+    --enable-libharfbuzz \
+    --enable-libfribidi \
     --enable-shared \
     --disable-static \
     --disable-doc || (cat ffbuild/config.log && exit 1) && \
@@ -88,10 +92,10 @@ RUN cd /tmp && \
 RUN ln -sf /opt/ffmpeg/bin/ffmpeg /usr/local/bin/ffmpeg && \
     ln -sf /opt/ffmpeg/bin/ffprobe /usr/local/bin/ffprobe
 
-# Verify FFmpeg build (non-fatal warnings)
+# Verify FFmpeg build (CRITICAL: drawtext must be present)
 RUN ffmpeg -version && \
+    ffmpeg -hide_banner -filters | grep drawtext && \
     (ffmpeg -hide_banner -encoders 2>/dev/null | grep nvenc || echo "Note: NVENC will be available at runtime") && \
-    (ffmpeg -hide_banner -filters 2>/dev/null | grep drawtext || echo "Note: drawtext filter will be available at runtime") && \
     (ffmpeg -hide_banner -hwaccels 2>/dev/null | grep cuda || echo "Note: CUDA hwaccel will be available at runtime")
 
 # Install Python dependencies
