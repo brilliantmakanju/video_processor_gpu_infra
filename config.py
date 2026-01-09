@@ -12,7 +12,7 @@ GPU_ENCODER = "h264_nvenc"  # NVIDIA hardware encoder
 GPU_PRESET = "p4"  # p1-p7, p4 is a good balance of speed and quality
 GPU_TUNE = "hq"  # High quality mode
 GPU_RC_MODE = "vbr"  # Variable bitrate for better quality
-CQ_QUALITY = 20  # Lower is better quality (was 24)
+CQ_QUALITY = 18  # Lower is better quality (was 20)
 
 # GPU decoder settings
 GPU_DECODER = "h264_cuvid"  # NVIDIA hardware decoder
@@ -25,7 +25,7 @@ GPU_SCALE_ALGO = "lanczos"  # Scaling algorithm (lanczos, bicubic, bilinear)
 # Advanced NVENC settings
 NVENC_SPATIAL_AQ = True  # Spatial adaptive quantization
 NVENC_TEMPORAL_AQ = True  # Temporal adaptive quantization
-NVENC_RC_LOOKAHEAD = 24  # Reduced for stability
+NVENC_RC_LOOKAHEAD = 20  # Reduced to 20 to stay within 32 surface limit on L4
 NVENC_SURFACES = 32  # Reduced to save VRAM and avoid initialization errors
 NVENC_MAXRATE = "10M"  # Increased for better quality (was 6M)
 NVENC_BUFSIZE = "20M"  # 2x maxrate

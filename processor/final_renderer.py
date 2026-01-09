@@ -133,6 +133,9 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
                 FFMPEG_BIN, "-y",
                 "-hwaccel", "cuda",
                 "-hwaccel_output_format", "cuda",
+                "-threads", "2", # Limit threads to avoid surface issues
+                "-c:v", "h264_cuvid", # Explicitly use hardware decoder
+                "-surfaces", str(DECODER_SURFACES), # Limit surfaces
                 "-i", intermediate_path
             ]
             
@@ -145,10 +148,14 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
                     final_cmd.extend(["-loop", "1", "-i", watermark_path])
             
             # Build filter complex
+            # 🔑 KEY FIX: Ensure video stream is in nv12 for overlay_cuda
             v_filters = ["format=cuda"]
             if out_w != render_w or out_h != render_h:
                 scale_filter = "scale_cuda" if USE_SCALE_CUDA else "scale_npp"
-                v_filters.append(f"{scale_filter}={out_w}:{out_h}:interp_algo={GPU_SCALE_ALGO}")
+                v_filters.append(f"{scale_filter}={out_w}:{out_h}:interp_algo={GPU_SCALE_ALGO}:format=nv12")
+            else:
+                # Even if no scaling, we might need to convert to nv12 for overlay_cuda
+                v_filters.append("format=nv12")
             
             v_chain = ",".join(v_filters)
             
@@ -174,8 +181,8 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
                 "-profile:v", "high",
                 "-spatial_aq", "1",
                 "-temporal_aq", "1",
-                "-rc-lookahead", "32",
-                "-surfaces", "32",
+                "-rc-lookahead", str(NVENC_RC_LOOKAHEAD),
+                "-surfaces", str(NVENC_SURFACES),
                 "-movflags", "+faststart",
                 output_path
             ])

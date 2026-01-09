@@ -3,7 +3,8 @@ from config import (
     FFMPEG_BIN, SMART_COPY_MODE, AUDIO_BITRATE, CQ_QUALITY, 
     MAX_SEGMENT_TIMEOUT, USE_SCALE_CUDA, GPU_SCALE_ALGO,
     DECODER_THREADS, DECODER_SURFACES, GPU_PRESET, GPU_TUNE,
-    NVENC_MAXRATE, NVENC_BUFSIZE, FINAL_UP_COMPRESS
+    NVENC_MAXRATE, NVENC_BUFSIZE, FINAL_UP_COMPRESS,
+    NVENC_RC_LOOKAHEAD, NVENC_SURFACES
 )
 from typing import Tuple
 from models import Segment
@@ -180,8 +181,8 @@ def render_segment_smart(args: tuple) -> str:
         "-profile:v", "high",
         "-spatial_aq", "1",
         "-temporal_aq", "1",
-        "-rc-lookahead", "32",
-        "-surfaces", "32", # Reduced from 64 for stability
+        "-rc-lookahead", str(NVENC_RC_LOOKAHEAD),
+        "-surfaces", str(NVENC_SURFACES),
         "-movflags", "+faststart",
         "-fps_mode", "passthrough",
     ])

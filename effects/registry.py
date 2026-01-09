@@ -36,7 +36,11 @@ def get_segment_filters(seg: Segment, width: int, height: int, has_audio: bool) 
         
 
     # 3. Subtitles
+    seen_subs = set()
     for subtitle in seg.subtitles:
-        v_filters.append(build_subtitle_filter(subtitle, seg.start, width, height))
+        sub_key = (subtitle.text, subtitle.start, subtitle.end)
+        if sub_key not in seen_subs:
+            v_filters.append(build_subtitle_filter(subtitle, seg.start, width, height))
+            seen_subs.add(sub_key)
 
     return v_filters, a_filters
