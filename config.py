@@ -12,7 +12,7 @@ GPU_ENCODER = "hevc_nvenc"  # NVIDIA hardware encoder (HEVC is much more efficie
 GPU_PRESET = "p2"  # p1-p7, p2 is very fast, p4 is balanced
 GPU_TUNE = "hq"  # High quality mode
 GPU_RC_MODE = "vbr"  # Variable bitrate for better quality
-CQ_QUALITY = 22  # Lower is better quality (was 18)
+CQ_QUALITY = 23  # Lower is better quality (was 22)
 GPU_PROFILE = "main" if "hevc" in GPU_ENCODER else "high"
 
 # GPU decoder settings
@@ -28,8 +28,8 @@ NVENC_SPATIAL_AQ = True  # Spatial adaptive quantization
 NVENC_TEMPORAL_AQ = True  # Temporal adaptive quantization
 NVENC_RC_LOOKAHEAD = 20  # Reduced to 20 to stay within 32 surface limit on L4
 NVENC_SURFACES = 32  # Reduced to save VRAM and avoid initialization errors
-NVENC_MAXRATE = "6M"  # Reduced to 6M for space (was 10M)
-NVENC_BUFSIZE = "12M"  # 2x maxrate
+NVENC_MAXRATE = "5M"  # Reduced to 5M for extra space safety (was 6M)
+NVENC_BUFSIZE = "10M"  # 2x maxrate
 
 # Decoder settings
 DECODER_THREADS = 2  # Keep it low for stability

@@ -262,7 +262,7 @@ def _build_gpu_filter_chain(
 
         # Final CPU formatting
         gpu_filters.append("setsar=1")
-        gpu_filters.append("format=yuv420p")
+        gpu_filters.append("format=nv12") # 🔑 KEY FIX: nv12 is required for stable hwupload_cuda
 
         # Note: hwupload_cuda is now added in render_segment_smart 
         # to allow watermark integration on CPU if needed.
