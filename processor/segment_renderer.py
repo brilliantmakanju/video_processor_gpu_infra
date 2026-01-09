@@ -5,7 +5,7 @@ from config import (
     DECODER_THREADS, DECODER_SURFACES, GPU_PRESET, GPU_TUNE,
     NVENC_MAXRATE, NVENC_BUFSIZE, FINAL_UP_COMPRESS,
     NVENC_RC_LOOKAHEAD, NVENC_SURFACES, GPU_ENCODER,
-    get_dynamic_maxrate
+    get_dynamic_maxrate, GPU_PROFILE
 )
 from typing import Tuple
 from models import Segment
@@ -180,7 +180,7 @@ def render_segment_smart(args: tuple) -> str:
         "-b:v", "0",
         "-maxrate", get_dynamic_maxrate(out_w, out_h),
         "-bufsize", str(int(get_dynamic_maxrate(out_w, out_h).replace('M','')) * 2) + "M",
-        "-profile:v", "high",
+        "-profile:v", GPU_PROFILE,
         "-spatial_aq", "1",
         "-temporal_aq", "1",
         "-rc-lookahead", str(NVENC_RC_LOOKAHEAD),

@@ -13,6 +13,7 @@ GPU_PRESET = "p2"  # p1-p7, p2 is very fast, p4 is balanced
 GPU_TUNE = "hq"  # High quality mode
 GPU_RC_MODE = "vbr"  # Variable bitrate for better quality
 CQ_QUALITY = 22  # Lower is better quality (was 18)
+GPU_PROFILE = "main" if "hevc" in GPU_ENCODER else "high"
 
 # GPU decoder settings
 GPU_DECODER = "h264_cuvid"  # NVIDIA hardware decoder
