@@ -107,100 +107,20 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
             for _, sf in segment_files:
                 f.write(f"file '{os.path.abspath(sf)}'\n")
         
-        if FINAL_UP_COMPRESS:
-            # ---------------------------------------------------------
-            # FINAL PASS: Upscale + Watermark + Compress
-            # ---------------------------------------------------------
-            intermediate_path = os.path.join(temp_dir, "intermediate_concat.mp4")
-            
-            # Step 1: Fast concat
-            print("  Step 1: Fast concatenation...")
-            fast_concat_cmd = [
-                FFMPEG_BIN, "-y",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", concat_list,
-                "-c", "copy",
-                intermediate_path
-            ]
-            run_ffmpeg(fast_concat_cmd)
-            
-            # Step 2: Final GPU Pass
-            print("  Step 2: Final GPU upscaling and compression...")
-            from effects.watermark import build_watermark_filter_gpu
-            
-            final_cmd = [
-                FFMPEG_BIN, "-y",
-                "-hwaccel", "cuda",
-                "-hwaccel_output_format", "cuda",
-                "-threads", "2", # Limit threads to avoid surface issues
-                "-c:v", "h264_cuvid", # Explicitly use hardware decoder
-                "-surfaces", str(DECODER_SURFACES), # Limit surfaces
-                "-i", intermediate_path
-            ]
-            
-            # Add watermark input if needed
-            if not is_paid and watermark_path:
-                is_gif = watermark_path.lower().endswith(".gif")
-                if is_gif:
-                    final_cmd.extend(["-ignore_loop", "0", "-i", watermark_path])
-                else:
-                    final_cmd.extend(["-loop", "1", "-i", watermark_path])
-            
-            # Build filter complex
-            # 🔑 KEY FIX: Ensure video stream is in nv12 for overlay_cuda
-            v_filters = ["format=cuda"]
-            if out_w != render_w or out_h != render_h:
-                scale_filter = "scale_cuda" if USE_SCALE_CUDA else "scale_npp"
-                v_filters.append(f"{scale_filter}={out_w}:{out_h}:interp_algo={GPU_SCALE_ALGO}:format=nv12")
-            else:
-                # Even if no scaling, we might need to convert to nv12 for overlay_cuda
-                v_filters.append("format=nv12")
-            
-            v_chain = ",".join(v_filters)
-            
-            if not is_paid and watermark_path:
-                wm_filter = build_watermark_filter_gpu(out_w, out_h)
-                filter_complex = f"[0:v]{v_chain}[v_in];{wm_filter}[v]"
-            else:
-                filter_complex = f"[0:v]{v_chain}[v]"
-            
-            final_cmd.extend([
-                "-filter_complex", filter_complex,
-                "-map", "[v]",
-                "-map", "0:a?",
-                "-c:a", "copy",
-                "-c:v", "h264_nvenc",
-                "-preset", GPU_PRESET,
-                "-tune", GPU_TUNE,
-                "-rc", "vbr",
-                "-cq", str(CQ_QUALITY),
-                "-b:v", "0",
-                "-maxrate", NVENC_MAXRATE,
-                "-bufsize", NVENC_BUFSIZE,
-                "-profile:v", "high",
-                "-spatial_aq", "1",
-                "-temporal_aq", "1",
-                "-rc-lookahead", str(NVENC_RC_LOOKAHEAD),
-                "-surfaces", str(NVENC_SURFACES),
-                "-movflags", "+faststart",
-                output_path
-            ])
-            
-            run_ffmpeg(final_cmd, timeout=MAX_CONCAT_TIMEOUT)
-        else:
-            # Traditional fast concat
-            final_cmd = [
-                FFMPEG_BIN, "-y",
-                "-f", "concat",
-                "-safe", "0",
-                "-fflags", "+genpts",
-                "-i", concat_list,
-                "-c", "copy",
-                "-movflags", "+faststart",
-                output_path
-            ]
-            run_ffmpeg(final_cmd, timeout=MAX_CONCAT_TIMEOUT)
+        # Use copy mode for concatenation (no re-encoding)
+        # This is nearly instant and preserves the quality of rendered segments
+        final_cmd = [
+            FFMPEG_BIN, "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-fflags", "+genpts",
+            "-i", concat_list,
+            "-c", "copy",
+            "-movflags", "+faststart",
+            output_path
+        ]
+        
+        run_ffmpeg(final_cmd, timeout=MAX_CONCAT_TIMEOUT)
         
         concat_time = time.time() - concat_start
         total_time = time.time() - start_time

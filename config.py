@@ -9,7 +9,7 @@ ENABLE_GPU = True
 
 # GPU encoding settings
 GPU_ENCODER = "h264_nvenc"  # NVIDIA hardware encoder
-GPU_PRESET = "p4"  # p1-p7, p4 is a good balance of speed and quality
+GPU_PRESET = "p2"  # p1-p7, p2 is very fast, p4 is balanced
 GPU_TUNE = "hq"  # High quality mode
 GPU_RC_MODE = "vbr"  # Variable bitrate for better quality
 CQ_QUALITY = 18  # Lower is better quality (was 20)
@@ -159,7 +159,7 @@ QUALITY_PRESETS = {
 }
 
 # Active preset
-ACTIVE_PRESET = "balanced"  # Balanced is safer for disk space
+ACTIVE_PRESET = "fast"  # Fast is faster but lower quality
 
 # ═══════════════════════════════════════════════════════════════
 # POST-PROCESSING
@@ -167,8 +167,9 @@ ACTIVE_PRESET = "balanced"  # Balanced is safer for disk space
 
 # Enable final GPU-accelerated upscaling and compression pass
 # This improves quality and reduces final file size
-FINAL_UP_COMPRESS = True
+# DISABLED: Taking too much time for long videos
+FINAL_UP_COMPRESS = False
 
 def get_active_preset():
     """Get the active quality preset settings."""
-    return QUALITY_PRESETS.get(ACTIVE_PRESET, QUALITY_PRESETS["balanced"])
+    return QUALITY_PRESETS.get(ACTIVE_PRESET, QUALITY_PRESETS["fast"])
