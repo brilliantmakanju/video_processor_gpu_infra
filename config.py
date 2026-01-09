@@ -12,7 +12,7 @@ GPU_ENCODER = "h264_nvenc"  # NVIDIA hardware encoder
 GPU_PRESET = "p4"  # p1-p7, p4 is a good balance of speed and quality
 GPU_TUNE = "hq"  # High quality mode
 GPU_RC_MODE = "vbr"  # Variable bitrate for better quality
-CQ_QUALITY = 24  # Slightly higher CQ for smaller files (23-28 recommended)
+CQ_QUALITY = 20  # Lower is better quality (was 24)
 
 # GPU decoder settings
 GPU_DECODER = "h264_cuvid"  # NVIDIA hardware decoder
@@ -27,8 +27,8 @@ NVENC_SPATIAL_AQ = True  # Spatial adaptive quantization
 NVENC_TEMPORAL_AQ = True  # Temporal adaptive quantization
 NVENC_RC_LOOKAHEAD = 24  # Reduced for stability
 NVENC_SURFACES = 32  # Reduced to save VRAM and avoid initialization errors
-NVENC_MAXRATE = "6M"  # Reduced to save disk space and speed up encoding
-NVENC_BUFSIZE = "12M"  # 2x maxrate
+NVENC_MAXRATE = "10M"  # Increased for better quality (was 6M)
+NVENC_BUFSIZE = "20M"  # 2x maxrate
 
 # Decoder settings
 DECODER_THREADS = 2  # Keep it low for stability
@@ -89,7 +89,7 @@ DEBUG_OVERLAY = False
 
 WATERMARK_URL = os.environ.get("WATERMARK_URL", "")
 WATERMARK_PADDING = 0.8
-WATERMARK_SCALE = 0.12  # 15% of video width
+WATERMARK_SCALE = 0.08  # 8% of video width (was 12%)
 WATERMARK_OPACITY = 0.8
 WATERMARK_POSITION = "bottom_left"  # top_left, top_right, bottom_left, bottom_right
 
@@ -160,6 +160,14 @@ QUALITY_PRESETS = {
 
 # Active preset
 ACTIVE_PRESET = "balanced"  # Balanced is safer for disk space
+
+# ═══════════════════════════════════════════════════════════════
+# POST-PROCESSING
+# ═══════════════════════════════════════════════════════════════
+
+# Enable final GPU-accelerated upscaling and compression pass
+# This improves quality and reduces final file size
+FINAL_UP_COMPRESS = True
 
 def get_active_preset():
     """Get the active quality preset settings."""

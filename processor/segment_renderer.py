@@ -3,7 +3,7 @@ from config import (
     FFMPEG_BIN, SMART_COPY_MODE, AUDIO_BITRATE, CQ_QUALITY, 
     MAX_SEGMENT_TIMEOUT, USE_SCALE_CUDA, GPU_SCALE_ALGO,
     DECODER_THREADS, DECODER_SURFACES, GPU_PRESET, GPU_TUNE,
-    NVENC_MAXRATE, NVENC_BUFSIZE
+    NVENC_MAXRATE, NVENC_BUFSIZE, FINAL_UP_COMPRESS
 )
 from typing import Tuple
 from models import Segment
@@ -58,7 +58,10 @@ def render_segment_smart(args: tuple) -> str:
     # Collect filters and determine pipeline type
     # ─────────────────────────────────────────────
     reg_v, reg_a = get_segment_filters(seg, out_w, out_h, has_audio)
-    needs_cpu = requires_cpu_filters(reg_v, debug_overlay, watermark_path if not is_paid else None)
+    
+    # Only apply watermark here if final pass is disabled
+    apply_wm = not is_paid and watermark_path and not FINAL_UP_COMPRESS
+    needs_cpu = requires_cpu_filters(reg_v, debug_overlay, watermark_path if apply_wm else None)
 
     # ─────────────────────────────────────────────
     # Base FFmpeg command
@@ -85,7 +88,7 @@ def render_segment_smart(args: tuple) -> str:
     ])
 
     # Add watermark input if needed
-    if not is_paid and watermark_path:
+    if apply_wm:
         # Loop for static images, ignore_loop for GIFs
         is_gif = watermark_path.lower().endswith(".gif")
         if is_gif:
@@ -120,7 +123,7 @@ def render_segment_smart(args: tuple) -> str:
         # HYBRID PATH: GPU Decode -> CPU Filters -> GPU Encode
         v_base = f"[0:v]{v_chain}"
         
-        if not is_paid and watermark_path:
+        if apply_wm:
             wm_filter = build_watermark_filter_integrated(
                 out_w, out_h, input_label="[v_pre_wm]", output_label="[v_cpu]"
             )
@@ -129,7 +132,7 @@ def render_segment_smart(args: tuple) -> str:
             v_final = f"{v_base},hwupload_cuda[v]"
     else:
         # PURE GPU PATH: Everything stays on GPU
-        if not is_paid and watermark_path:
+        if apply_wm:
             # We try to use GPU overlay if possible, but it's risky with alpha.
             # For now, we'll use the GPU filter we built, but if it fails, 
             # we should have forced needs_cpu earlier.
