@@ -106,6 +106,31 @@ def build_watermark_filter_integrated(video_width: int, video_height: int) -> Op
     return f"[1:v]{scale},{opacity}[wm];[v_in][wm]overlay={x_pos}:{y_pos}:shortest=1"
 
 
+def build_watermark_filter_gpu(video_width: int, video_height: int) -> Optional[str]:
+    """
+    Build GPU-accelerated FFmpeg filter for watermark overlay.
+    Uses overlay_cuda which requires both inputs to be in CUDA memory.
+    """
+    if not WATERMARK_URL:
+        return None
+    
+    wm_width = int(video_width * WATERMARK_SCALE)
+    x_pos, y_pos = calculate_position(
+        WATERMARK_POSITION, video_width, video_height, wm_width, WATERMARK_PADDING
+    )
+    
+    # Upload watermark to GPU, scale it there, and overlay
+    # Note: overlay_cuda doesn't support shortest=1 in some versions, 
+    # but we can use it if available or handle it via input duration.
+    # For now, we'll use the basic overlay_cuda syntax.
+    scale = f"scale_cuda={wm_width}:-1:format=nv12"
+    
+    # Opacity on GPU is tricky without custom shaders, so we'll do it on CPU before upload
+    opacity = f"format=rgba,colorchannelmixer=aa={WATERMARK_OPACITY}"
+    
+    return f"[1:v]{opacity},hwupload_cuda,{scale}[wm];[v_in][wm]overlay_cuda={x_pos}:{y_pos}"
+
+
 # =============================================================================
 # APPLY WATERMARK
 # =============================================================================

@@ -10,7 +10,7 @@ from utils.ffmpeg import run_ffmpeg
 from utils.gpu import check_gpu_support, get_gpu_compute_capability
 from utils.text import escape_filter_text
 from effects.registry import get_segment_filters
-from effects.watermark import build_watermark_filter_integrated, download_watermark
+from effects.watermark import build_watermark_filter_integrated, build_watermark_filter_gpu, download_watermark
 
 def render_segment_smart(args: tuple) -> str:
     (
@@ -116,15 +116,21 @@ def render_segment_smart(args: tuple) -> str:
     # Build Filter Complex with Watermark support
     # ─────────────────────────────────────────────
     if not is_paid and watermark_path:
-        wm_filter = build_watermark_filter_integrated(out_w, out_h)
-        if wm_filter:
-            # wm_filter is like "[1:v]scale...[wm];[v_in][wm]overlay...[v]"
+        if needs_cpu:
+            # Hybrid path: Apply watermark on CPU, then upload
+            wm_filter = build_watermark_filter_integrated(out_w, out_h)
+            v_base = f"[0:v]{v_chain}[v_pre_wm];"
+            v_final = f"{v_base}{wm_filter.replace('[v_in]', '[v_pre_wm]')}[v_cpu];[v_cpu]hwupload_cuda[v]"
+        else:
+            # Pure GPU path: Apply watermark on GPU
+            wm_filter = build_watermark_filter_gpu(out_w, out_h)
             v_base = f"[0:v]{v_chain}[v_in];"
             v_final = f"{v_base}{wm_filter}[v]"
+    else:
+        if needs_cpu:
+            v_final = f"[0:v]{v_chain},hwupload_cuda[v]"
         else:
             v_final = f"[0:v]{v_chain}[v]"
-    else:
-        v_final = f"[0:v]{v_chain}[v]"
 
     if has_audio and reg_a:
         a_chain = ",".join(reg_a)
@@ -239,23 +245,12 @@ def _build_gpu_filter_chain(
                 "box=1:boxcolor=black@0.7:x=10:y=10"
             )
 
-        # Final CPU formatting before sending back to GPU
+        # Final CPU formatting
         gpu_filters.append("setsar=1")
         gpu_filters.append("format=yuv420p")
 
-        # Upload back to GPU for NVENC
-        gpu_filters.append("hwupload_cuda")
-        
-        # Apply watermark if needed (integrated into CPU path for simplicity)
-        if not is_paid:
-            wm_filter = build_watermark_filter_integrated(out_w, out_h)
-            if wm_filter:
-                # Replace [v_in] with the current stream and [1:v] is the watermark
-                # We need to be careful with labels here. 
-                # Since this is a simple chain, we can just append it.
-                # However, build_watermark_filter_integrated returns a complex filter string.
-                # For a simple -vf or a single chain in filter_complex, we can adapt it.
-                pass # We'll handle this in the filter_complex construction
+        # Note: hwupload_cuda is now added in render_segment_smart 
+        # to allow watermark integration on CPU if needed.
         
         print(f"DEBUG: Hybrid Filter Chain for segment {seg_idx}: {gpu_filters}")
         return gpu_filters
@@ -279,8 +274,8 @@ def _build_gpu_filter_chain(
     if debug_overlay:
         print(f"⚠️  Warning: debug overlay requires CPU, skipping for segment {seg_idx}")
 
-    # Ensure SAR is set for NVENC
-    gpu_filters.append("setsar=1")
+    # Ensure SAR is set for NVENC (only on CPU or if we have a GPU filter for it)
+    # gpu_filters.append("setsar=1") # REMOVED: setsar is a CPU filter
 
     print(f"DEBUG: GPU Filter Chain for segment {seg_idx}: {gpu_filters}")
     return gpu_filters

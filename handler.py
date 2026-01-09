@@ -50,18 +50,26 @@ def handler(job):
         total, used, free = shutil.disk_usage("/")
         free_gb = free / (1024**3)
         
-        # If file > 500MB and free space < 5GB, compress it
+        # If file > 500MB and free space < 6.0GB, compress it
         if file_size_gb > 0.5 and free_gb < 6.0:
-            log(f"⚠️ Low disk space ({free_gb:.1f}GB). Compressing input video to save space...")
-            temp_compressed = INPUT_VIDEO + ".tmp.mp4"
-            compress_video_gpu(INPUT_VIDEO, temp_compressed, target_bitrate="4M")
+            # Calculate current bitrate to avoid up-compressing
+            info = get_video_info(INPUT_VIDEO)
+            current_bitrate_kbps = (os.path.getsize(INPUT_VIDEO) * 8) / (info["duration"] * 1000)
+            target_bitrate_kbps = 3000 # 3Mbps target
             
-            if os.path.exists(temp_compressed):
-                new_size = os.path.getsize(temp_compressed) / (1024**3)
-                log(f"✓ Compressed input from {file_size_gb:.2f}GB to {new_size:.2f}GB")
-                os.replace(temp_compressed, INPUT_VIDEO)
+            if current_bitrate_kbps > target_bitrate_kbps * 1.2:
+                log(f"⚠️ Low disk space ({free_gb:.1f}GB). Compressing input video ({current_bitrate_kbps:.0f}kbps -> {target_bitrate_kbps}kbps)...")
+                temp_compressed = INPUT_VIDEO + ".tmp.mp4"
+                compress_video_gpu(INPUT_VIDEO, temp_compressed, target_bitrate=f"{target_bitrate_kbps}k")
+                
+                if os.path.exists(temp_compressed):
+                    new_size = os.path.getsize(temp_compressed) / (1024**3)
+                    log(f"✓ Compressed input from {file_size_gb:.2f}GB to {new_size:.2f}GB")
+                    os.replace(temp_compressed, INPUT_VIDEO)
+                else:
+                    log("❌ Compression failed, proceeding with original file.")
             else:
-                log("❌ Compression failed, proceeding with original file.")
+                log(f"ℹ️ Skipping compression: current bitrate ({current_bitrate_kbps:.0f}kbps) is already low.")
 
         info = get_video_info(INPUT_VIDEO)
         print(f"DEBUG: Video Info - {info}")
