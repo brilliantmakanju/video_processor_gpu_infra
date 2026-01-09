@@ -24,12 +24,12 @@ def compress_video_gpu(input_path: str, output_path: str, target_bitrate: str = 
     Quickly compress a video using GPU to save disk space.
     Used for pre-processing large input files.
     """
-    from config import FFMPEG_BIN
+    from config import FFMPEG_BIN, GPU_ENCODER
     cmd = [
         FFMPEG_BIN, "-y",
         "-hwaccel", "cuda",
         "-i", input_path,
-        "-c:v", "h264_nvenc",
+        "-c:v", GPU_ENCODER,
         "-b:v", target_bitrate,
         "-preset", "p1", # Fastest possible preset for pre-processing
         "-tune", "ll",   # Low latency

@@ -8,11 +8,11 @@ import os
 ENABLE_GPU = True
 
 # GPU encoding settings
-GPU_ENCODER = "h264_nvenc"  # NVIDIA hardware encoder
+GPU_ENCODER = "hevc_nvenc"  # NVIDIA hardware encoder (HEVC is much more efficient)
 GPU_PRESET = "p2"  # p1-p7, p2 is very fast, p4 is balanced
 GPU_TUNE = "hq"  # High quality mode
 GPU_RC_MODE = "vbr"  # Variable bitrate for better quality
-CQ_QUALITY = 18  # Lower is better quality (was 20)
+CQ_QUALITY = 22  # Lower is better quality (was 18)
 
 # GPU decoder settings
 GPU_DECODER = "h264_cuvid"  # NVIDIA hardware decoder
@@ -27,8 +27,8 @@ NVENC_SPATIAL_AQ = True  # Spatial adaptive quantization
 NVENC_TEMPORAL_AQ = True  # Temporal adaptive quantization
 NVENC_RC_LOOKAHEAD = 20  # Reduced to 20 to stay within 32 surface limit on L4
 NVENC_SURFACES = 32  # Reduced to save VRAM and avoid initialization errors
-NVENC_MAXRATE = "10M"  # Increased for better quality (was 6M)
-NVENC_BUFSIZE = "20M"  # 2x maxrate
+NVENC_MAXRATE = "6M"  # Reduced to 6M for space (was 10M)
+NVENC_BUFSIZE = "12M"  # 2x maxrate
 
 # Decoder settings
 DECODER_THREADS = 2  # Keep it low for stability
@@ -160,6 +160,16 @@ QUALITY_PRESETS = {
 
 # Active preset
 ACTIVE_PRESET = "fast"  # Fast is faster but lower quality
+
+# ═══════════════════════════════════════════════════════════════
+# DYNAMIC BITRATE ADJUSTMENT
+# ═══════════════════════════════════════════════════════════════
+
+def get_dynamic_maxrate(width, height):
+    """Calculate a reasonable maxrate based on resolution."""
+    if width >= 1920: return "12M"
+    if width >= 1280: return "6M"
+    return "3M"
 
 # ═══════════════════════════════════════════════════════════════
 # POST-PROCESSING

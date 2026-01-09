@@ -87,8 +87,11 @@ def handler(job):
         import shutil
         total, used, free = shutil.disk_usage("/")
         log(f"Disk Space: {free // (1024**3)}GB free of {total // (1024**3)}GB")
-        if free < 2 * 1024**3: # Less than 2GB
-            log("⚠️ WARNING: Low disk space! Processing might fail for large videos.")
+        if free < 3 * 1024**3: # Less than 3GB
+            log("⚠️ WARNING: Low disk space! Reducing quality to ensure completion.")
+            # Dynamically lower quality if space is tight
+            import processor.final_renderer
+            processor.final_renderer.CQ_QUALITY = 26
 
         start_time = time.time()
 

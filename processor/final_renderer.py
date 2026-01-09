@@ -64,7 +64,7 @@ def render_final_video(segments: List[Segment], input_path: str, output_path: st
     # Prepare render arguments
     render_args = [
         (i, seg, input_path, temp_dir, info["fps"], DEBUG_OVERLAY, info["has_audio"],
-         orig_w, orig_h, render_w, render_h, is_paid, watermark_path)
+         orig_w, orig_h, render_w, render_h, is_paid, watermark_path, CQ_QUALITY)
         for i, seg in enumerate(segments)
     ]
     

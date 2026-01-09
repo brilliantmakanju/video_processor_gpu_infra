@@ -4,7 +4,8 @@ from config import (
     MAX_SEGMENT_TIMEOUT, USE_SCALE_CUDA, GPU_SCALE_ALGO,
     DECODER_THREADS, DECODER_SURFACES, GPU_PRESET, GPU_TUNE,
     NVENC_MAXRATE, NVENC_BUFSIZE, FINAL_UP_COMPRESS,
-    NVENC_RC_LOOKAHEAD, NVENC_SURFACES
+    NVENC_RC_LOOKAHEAD, NVENC_SURFACES, GPU_ENCODER,
+    get_dynamic_maxrate
 )
 from typing import Tuple
 from models import Segment
@@ -29,6 +30,7 @@ def render_segment_smart(args: tuple) -> str:
         out_h,
         is_paid,
         watermark_path,
+        seg_cq,
     ) = args
 
     temp_out = os.path.join(temp_dir, f"seg_{i:04d}.mp4")
@@ -170,14 +172,14 @@ def render_segment_smart(args: tuple) -> str:
     # NVENC encode
     # ─────────────────────────────────────────────
     cmd.extend([
-        "-c:v", "h264_nvenc",
+        "-c:v", GPU_ENCODER,
         "-preset", GPU_PRESET,
         "-tune", GPU_TUNE,
         "-rc", "vbr",
-        "-cq", str(CQ_QUALITY),
+        "-cq", str(seg_cq),
         "-b:v", "0",
-        "-maxrate", NVENC_MAXRATE,
-        "-bufsize", NVENC_BUFSIZE,
+        "-maxrate", get_dynamic_maxrate(out_w, out_h),
+        "-bufsize", str(int(get_dynamic_maxrate(out_w, out_h).replace('M','')) * 2) + "M",
         "-profile:v", "high",
         "-spatial_aq", "1",
         "-temporal_aq", "1",
