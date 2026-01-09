@@ -85,11 +85,12 @@ def build_watermark_filter(video_width: int, video_height: int) -> Optional[str]
     return f"[1:v]{scale},{opacity}[wm];[0:v][wm]overlay={x_pos}:{y_pos}:shortest=1"
 
 
-def build_watermark_filter_integrated(video_width: int, video_height: int) -> Optional[str]:
+def build_watermark_filter_integrated(video_width: int, video_height: int, 
+                                      input_label: str = "[v_in]", 
+                                      output_label: str = "[v_out]") -> Optional[str]:
     """
     Build FFmpeg filter for watermark overlay to be used in a larger filter complex.
-    Assumes watermark is input [1:v] and video is [v_in].
-    Returns filter string or None if watermark not configured.
+    Assumes watermark is input [1:v].
     """
     if not WATERMARK_URL:
         return None
@@ -102,8 +103,7 @@ def build_watermark_filter_integrated(video_width: int, video_height: int) -> Op
     scale = f"scale={wm_width}:-1"
     opacity = f"format=rgba,colorchannelmixer=aa={WATERMARK_OPACITY}"
     
-    # This version is designed to be chained: [v_in][wm]overlay...[v_out]
-    return f"[1:v]{scale},{opacity}[wm];[v_in][wm]overlay={x_pos}:{y_pos}:shortest=1"
+    return f"[1:v]{scale},{opacity}[wm];{input_label}[wm]overlay={x_pos}:{y_pos}:shortest=1{output_label}"
 
 
 def build_watermark_filter_gpu(video_width: int, video_height: int) -> Optional[str]:

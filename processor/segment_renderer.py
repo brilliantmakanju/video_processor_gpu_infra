@@ -2,7 +2,8 @@ import os
 from config import (
     FFMPEG_BIN, SMART_COPY_MODE, AUDIO_BITRATE, CQ_QUALITY, 
     MAX_SEGMENT_TIMEOUT, USE_SCALE_CUDA, GPU_SCALE_ALGO,
-    DECODER_THREADS, DECODER_SURFACES
+    DECODER_THREADS, DECODER_SURFACES, GPU_PRESET, GPU_TUNE,
+    NVENC_MAXRATE, NVENC_BUFSIZE
 )
 from typing import Tuple
 from models import Segment
@@ -57,7 +58,7 @@ def render_segment_smart(args: tuple) -> str:
     # Collect filters and determine pipeline type
     # ─────────────────────────────────────────────
     reg_v, reg_a = get_segment_filters(seg, out_w, out_h, has_audio)
-    needs_cpu = requires_cpu_filters(reg_v, debug_overlay)
+    needs_cpu = requires_cpu_filters(reg_v, debug_overlay, watermark_path if not is_paid else None)
 
     # ─────────────────────────────────────────────
     # Base FFmpeg command
@@ -113,22 +114,28 @@ def render_segment_smart(args: tuple) -> str:
     v_chain = ",".join(gpu_filters)
 
     # ─────────────────────────────────────────────
-    # Build Filter Complex with Watermark support
+    # Build Filter Complex
     # ─────────────────────────────────────────────
-    if not is_paid and watermark_path:
-        if needs_cpu:
-            # Hybrid path: Apply watermark on CPU, then upload
-            wm_filter = build_watermark_filter_integrated(out_w, out_h)
-            v_base = f"[0:v]{v_chain}[v_pre_wm];"
-            v_final = f"{v_base}{wm_filter.replace('[v_in]', '[v_pre_wm]')}[v_cpu];[v_cpu]hwupload_cuda[v]"
+    if needs_cpu:
+        # HYBRID PATH: GPU Decode -> CPU Filters -> GPU Encode
+        v_base = f"[0:v]{v_chain}"
+        
+        if not is_paid and watermark_path:
+            wm_filter = build_watermark_filter_integrated(
+                out_w, out_h, input_label="[v_pre_wm]", output_label="[v_cpu]"
+            )
+            v_final = f"{v_base}[v_pre_wm];{wm_filter};[v_cpu]hwupload_cuda[v]"
         else:
-            # Pure GPU path: Apply watermark on GPU
+            v_final = f"{v_base},hwupload_cuda[v]"
+    else:
+        # PURE GPU PATH: Everything stays on GPU
+        if not is_paid and watermark_path:
+            # We try to use GPU overlay if possible, but it's risky with alpha.
+            # For now, we'll use the GPU filter we built, but if it fails, 
+            # we should have forced needs_cpu earlier.
             wm_filter = build_watermark_filter_gpu(out_w, out_h)
             v_base = f"[0:v]{v_chain}[v_in];"
             v_final = f"{v_base}{wm_filter}[v]"
-    else:
-        if needs_cpu:
-            v_final = f"[0:v]{v_chain},hwupload_cuda[v]"
         else:
             v_final = f"[0:v]{v_chain}[v]"
 
@@ -160,13 +167,13 @@ def render_segment_smart(args: tuple) -> str:
     # ─────────────────────────────────────────────
     cmd.extend([
         "-c:v", "h264_nvenc",
-        "-preset", "p7",
-        "-tune", "hq",
+        "-preset", GPU_PRESET,
+        "-tune", GPU_TUNE,
         "-rc", "vbr",
         "-cq", str(CQ_QUALITY),
         "-b:v", "0",
-        "-maxrate", "20M",
-        "-bufsize", "40M",
+        "-maxrate", NVENC_MAXRATE,
+        "-bufsize", NVENC_BUFSIZE,
         "-profile:v", "high",
         "-spatial_aq", "1",
         "-temporal_aq", "1",
@@ -281,11 +288,15 @@ def _build_gpu_filter_chain(
     return gpu_filters
 
 
-def requires_cpu_filters(video_filters: list[str], debug_overlay: bool) -> bool:
+def requires_cpu_filters(video_filters: list[str], debug_overlay: bool, watermark_path: str = None) -> bool:
     """
     Determine if ANY filter requires CPU frames.
     This prevents illegal CUDA → CPU auto-conversions.
     """
+    # 🔑 CRITICAL: Watermarks with transparency currently require CPU overlay
+    if watermark_path:
+        return True
+
     # Filters that are definitely CPU-only
     CPU_ONLY_FILTERS = (
         "drawtext",
