@@ -188,7 +188,7 @@ def render_segment_smart(args: tuple) -> str:
         "-rc-lookahead", str(NVENC_RC_LOOKAHEAD),
         "-surfaces", str(NVENC_SURFACES),
         "-movflags", "+faststart",
-        "-tag:v", "hvc1",
+        "-tag:v", "avc1",
         "-fps_mode", "passthrough",
     ])
 

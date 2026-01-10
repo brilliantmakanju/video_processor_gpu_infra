@@ -8,12 +8,12 @@ import os
 ENABLE_GPU = True
 
 # GPU encoding settings
-GPU_ENCODER = "hevc_nvenc"  # NVIDIA hardware encoder (HEVC is much more efficient)
+GPU_ENCODER = "h264_nvenc"  # NVIDIA hardware encoder (H.264 for universal compatibility)
 GPU_PRESET = "p2"  # p1-p7, p2 is very fast, p4 is balanced
 GPU_TUNE = "hq"  # High quality mode
 GPU_RC_MODE = "vbr"  # Variable bitrate for better quality
 CQ_QUALITY = 23  # Lower is better quality (was 22)
-GPU_PROFILE = "main" if "hevc" in GPU_ENCODER else "high"
+GPU_PROFILE = "high"  # H.264 high profile for best quality
 
 # GPU decoder settings
 GPU_DECODER = "h264_cuvid"  # NVIDIA hardware decoder
