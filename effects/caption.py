@@ -24,8 +24,8 @@ def build_subtitle_filter(subtitle: Subtitle, segment_start: float,
     font_size = style.get("fontSize", 38)                  
     outline_width = style.get("strokeWidth", 5)              
     text_align = style.get("textAlign", "center").lower()
-    primary_color = style.get("color", "#FFFFFF").lstrip("#")   
-    outline_color = style.get("strokeColor", "#000000").lstrip("#")
+    primary_color = style.get("color", "#FFFFFF")   
+    outline_color = style.get("strokeColor", "#000000")
     
     
     # Horizontal alignment
@@ -43,9 +43,9 @@ def build_subtitle_filter(subtitle: Subtitle, segment_start: float,
         f"y={base_y}:" 
         f"text='{text}':"
         f"fontsize={font_size}:"
-        f"fontcolor=0x{primary_color.upper()}:"
+        f"fontcolor={primary_color.upper()}:"
         f"borderw={outline_width}:"
-        f"bordercolor=0x{outline_color.upper()}:"
+        f"bordercolor={outline_color.upper()}:"
         # Background box: black, 60% opacity, generous padding
         # f"box=1:"
         # f"boxborderw=16:"
