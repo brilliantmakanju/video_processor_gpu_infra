@@ -3,6 +3,17 @@ import subprocess
 from typing import Dict, Any, Tuple
 from config import FFPROBE_BIN, RESOLUTION_PRESETS
 
+class VideoInfoError(RuntimeError):
+    """Base error for video inspection failures."""
+
+
+class VideoTruncatedError(VideoInfoError):
+    """File is incomplete — moov atom missing because the file was cut short."""
+
+
+class VideoCorruptError(VideoInfoError):
+    """File exists but ffprobe cannot parse it at all."""
+
 def get_output_resolution(original_width: int, original_height: int, 
                           requested_res: str = "original") -> Tuple[int, int]:
     """
@@ -43,14 +54,36 @@ def compress_video_gpu(input_path: str, output_path: str, target_bitrate: str = 
 def get_video_info(path: str) -> Dict[str, Any]:
     """Get video metadata efficiently with robust error handling."""
     try:
+        
+        if not os.path.exists(path):
+            raise VideoInfoError(f"File does not exist: {path}")
+        if os.path.getsize(path) == 0:
+            raise VideoTruncatedError(f"File is empty (0 bytes): {path}")
+
+
         cmd = [
             FFPROBE_BIN, "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=codec_name,codec_type,width,height,duration,r_frame_rate:format=duration",
-            "-of", "json", path
+            "-show_entries",
+            "stream=codec_name,codec_type,width,height,duration,r_frame_rate"
+            ":format=duration",
+            "-of", "json", path,
         ]
+
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
-            raise RuntimeError(f"FFprobe failed: {result.stderr}")
+            stderr = result.stderr.strip()
+            if "moov atom not found" in stderr:
+                raise VideoTruncatedError(
+                    f"MP4 missing 'moov' atom — truncated or not a valid MP4 "
+                    f"(size={os.path.getsize(path)} bytes): {path}"
+                )
+          
+            if "Invalid data found" in stderr:
+                raise VideoCorruptError(f"FFprobe cannot parse file: {stderr}")
+            
+            raise VideoInfoError(f"FFprobe failed: {stderr}")
+
+        #    raise RuntimeError(f"FFprobe failed: {result.stderr}")
             
         data = json.loads(result.stdout)
         
@@ -85,5 +118,11 @@ def get_video_info(path: str) -> Dict[str, Any]:
             "height": int(v_stream.get("height", 1080)),
             "codec": v_stream.get("codec_name", "unknown")
         }
+    except VideoInfoError:
+        raise  # already typed — don't re-wrap
+    except subprocess.TimeoutExpired as e:
+        raise VideoInfoError(f"FFprobe timed out on {path}: {e}") from e
     except Exception as e:
-        raise RuntimeError(f"Failed to get video info for {path}: {str(e)}")
+        raise VideoInfoError(f"Failed to get video info for {path}: {e}") from e
+  #  except Exception as e:
+   #     raise RuntimeError(f"Failed to get video info for {path}: {str(e)}")
