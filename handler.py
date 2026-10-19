@@ -60,8 +60,14 @@ def handler(job):
             if current_bitrate_kbps > target_bitrate_kbps * 1.2:
                 log(f"⚠️ Low disk space ({free_gb:.1f}GB). Compressing input video ({current_bitrate_kbps:.0f}kbps -> {target_bitrate_kbps}kbps)...")
                 temp_compressed = INPUT_VIDEO + ".tmp.mp4"
-                compress_video_gpu(INPUT_VIDEO, temp_compressed, target_bitrate=f"{target_bitrate_kbps}k")
                 
+                try:
+                    compress_video_gpu(INPUT_VIDEO, temp_compressed, target_bitrate=f"{target_bitrate_kbps}k")
+                    # compress_video_gpu(src, dst)
+                except RuntimeError as e:
+                    logger.error("Compression failed: %s", e)
+                    raise  # or return an error status — but DON'T proceed to probe dst
+
                 if os.path.exists(temp_compressed):
                     new_size = os.path.getsize(temp_compressed) / (1024**3)
                     log(f"✓ Compressed input from {file_size_gb:.2f}GB to {new_size:.2f}GB")

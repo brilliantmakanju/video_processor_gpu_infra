@@ -30,26 +30,70 @@ def get_output_resolution(original_width: int, original_height: int,
         
     return target_w, target_h
 
-def compress_video_gpu(input_path: str, output_path: str, target_bitrate: str = "5M"):
+def compress_video_gpu(
+    input_path: str,
+    output_path: str,
+    target_bitrate: str = "8M",
+    timeout_s: int = 1800,
+) -> None:
     """
-    Quickly compress a video using GPU to save disk space.
-    Used for pre-processing large input files.
+    Quickly compress a video using GPU to save disk space (pre-processing step).
+    Raises RuntimeError if ffmpeg fails or produces an empty file.
     """
     from config import FFMPEG_BIN, GPU_ENCODER
+
+    if not os.path.exists(input_path):
+        raise RuntimeError(f"compress_video_gpu: input not found: {input_path}")
+
     cmd = [
-        FFMPEG_BIN, "-y",
+        FFMPEG_BIN, "-y", "-v", "error",
         "-hwaccel", "cuda",
         "-i", input_path,
         "-c:v", GPU_ENCODER,
         "-b:v", target_bitrate,
-        "-preset", "p1", # Fastest possible preset for pre-processing
-        "-tune", "ll",   # Low latency
-        "-tag:v", "hvc1",
-        "-c:a", "copy",   # Keep original audio
-        output_path
+        "-maxrate", target_bitrate,
+        "-bufsize", "2M",
+        "-preset", "p4",            # fast but not quality-destroying
+        # drop -tune ll — it's for streaming, not compression
+        "-tag:v", "hvc1" if "hevc" in GPU_ENCODER else "avc1",
+        "-c:a", "aac", "-b:a", "128k",
+        "-movflags", "+faststart",
+        output_path,
     ]
-    print(f"DEBUG: Compressing input video to save space: {input_path} -> {output_path}")
-    subprocess.run(cmd, capture_output=True, text=True)
+
+    logger.info(
+        "Compressing %s -> %s (encoder=%s, bitrate=%s)",
+        input_path, output_path, GPU_ENCODER, target_bitrate,
+    )
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout_s, check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"compress_video_gpu: ffmpeg timed out after {timeout_s}s"
+        )
+
+    if result.returncode != 0:
+        # THIS is what you were missing — surface the actual failure
+        stderr_tail = (result.stderr or "").strip()[-1000:]
+        raise RuntimeError(
+            f"compress_video_gpu: ffmpeg failed (rc={result.returncode}) "
+            f"for {input_path}\n{stderr_tail}"
+        )
+
+    if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+        raise RuntimeError(
+            f"compress_video_gpu: ffmpeg produced empty output: {output_path}"
+        )
+
+    in_mb = os.path.getsize(input_path) / (1024 * 1024)
+    out_mb = os.path.getsize(output_path) / (1024 * 1024)
+    logger.info(
+        "Compression done: %.1f MB -> %.1f MB (%.1f%% saved)",
+        in_mb, out_mb, (1 - out_mb / in_mb) * 100 if in_mb else 0,
+    )
 
 def get_video_info(path: str) -> Dict[str, Any]:
     """Get video metadata efficiently with robust error handling."""
